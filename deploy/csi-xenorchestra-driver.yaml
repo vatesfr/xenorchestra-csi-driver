@@ -1,0 +1,19 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi.xenorchestra.vates.tech
+  annotations:
+    csiDriver: latest
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra
+    app.kubernetes.io/component: serviceaccount
+spec:
+  attachRequired: true
+  podInfoOnMount: true
+  fsGroupPolicy: File
+  # Supports persistent volumes only.
+  volumeLifecycleModes:
+    - Persistent

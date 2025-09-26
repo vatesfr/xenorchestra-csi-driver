@@ -1,0 +1,194 @@
+---
+# All of the individual sidecar RBAC roles get bound
+# to this account.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-xenorchestra-controller-sa
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-controller-sa
+    app.kubernetes.io/component: serviceaccount
+
+# ---
+
+# # TODO: Not implemented yet (dynamic provisioning)
+# kind: ClusterRole
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-external-provisioner-role
+# rules:
+#   - apiGroups: [ "" ]
+#     resources: [ "persistentvolumes" ]
+#     verbs: [ "get", "list", "watch", "create", "patch", "delete" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "persistentvolumeclaims" ]
+#     verbs: [ "get", "list", "watch", "update" ]
+#   - apiGroups: [ "storage.k8s.io" ]
+#     resources: [ "storageclasses" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "events" ]
+#     verbs: [ "get", "list", "watch", "create", "update", "patch" ]
+#   - apiGroups: [ "storage.k8s.io" ]
+#     resources: [ "csinodes" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "nodes" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "snapshot.storage.k8s.io" ]
+#     resources: [ "volumesnapshots" ]
+#     verbs: [ "get", "list" ]
+#   - apiGroups: [ "snapshot.storage.k8s.io" ]
+#     resources: [ "volumesnapshotcontents" ]
+#     verbs: [ "get", "list" ]
+#   - apiGroups: [ "coordination.k8s.io" ]
+#     resources: [ "leases" ]
+#     verbs: [ "get", "watch", "list", "delete", "update", "create", "patch" ]
+# ---
+
+# kind: ClusterRoleBinding
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-provisioner-binding
+# subjects:
+#   - kind: ServiceAccount
+#     name: csi-xenorchestra-controller-sa
+#     namespace: kube-system
+# roleRef:
+#   kind: ClusterRole
+#   name: csi-xenorchestra-external-provisioner-role
+#   apiGroup: rbac.authorization.k8s.io
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-external-attacher-role
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-external-attacher-role
+    app.kubernetes.io/component: clusterrole
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "persistentvolumes" ]
+    verbs: [ "get", "list", "watch", "patch" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "csinodes" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "volumeattachments" ]
+    verbs: [ "get", "list", "watch", "patch" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "volumeattachments/status" ]
+    verbs: [ "patch" ]
+  - apiGroups: [ "coordination.k8s.io" ]
+    resources: [ "leases" ]
+    verbs: [ "get", "watch", "list", "delete", "update", "create" ]
+  - apiGroups: [ "" ]
+    resources: [ "events" ]
+    verbs: [ "list", "watch", "create", "update", "patch" ]
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-attacher-binding
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-attacher-binding
+    app.kubernetes.io/component: clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: csi-xenorchestra-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-xenorchestra-external-attacher-role
+  apiGroup: rbac.authorization.k8s.io
+
+# ---
+
+# TODO: Not implemented yet
+# kind: ClusterRole
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-external-snapshotter-role
+# rules:
+#   - apiGroups: [ "" ]
+#     resources: [ "events" ]
+#     verbs: [ "list", "watch", "create", "update", "patch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "secrets" ]
+#     verbs: [ "get" ]
+#   - apiGroups: [ "snapshot.storage.k8s.io" ]
+#     resources: [ "volumesnapshotclasses" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "snapshot.storage.k8s.io" ]
+#     resources: [ "volumesnapshotcontents" ]
+#     verbs: [ "create", "get", "list", "watch", "update", "delete", "patch" ]
+#   - apiGroups: [ "snapshot.storage.k8s.io" ]
+#     resources: [ "volumesnapshotcontents/status" ]
+#     verbs: [ "update", "patch" ]
+#   - apiGroups: [ "coordination.k8s.io" ]
+#     resources: [ "leases" ]
+#     verbs: [ "get", "watch", "list", "delete", "update", "create", "patch" ]
+# ---
+
+# kind: ClusterRoleBinding
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-snapshotter-binding
+# subjects:
+#   - kind: ServiceAccount
+#     name: csi-xenorchestra-controller-sa
+#     namespace: kube-system
+# roleRef:
+#   kind: ClusterRole
+#   name: csi-xenorchestra-external-snapshotter-role
+#   apiGroup: rbac.authorization.k8s.io
+# ---
+# TODO: Not implemented yet
+# kind: ClusterRole
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-external-resizer-role
+# rules:
+#   - apiGroups: [ "" ]
+#     resources: [ "persistentvolumes" ]
+#     verbs: [ "get", "list", "watch", "update", "patch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "persistentvolumeclaims" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "persistentvolumeclaims/status" ]
+#     verbs: [ "update", "patch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "events" ]
+#     verbs: [ "list", "watch", "create", "update", "patch" ]
+#   - apiGroups: [ "coordination.k8s.io" ]
+#     resources: [ "leases" ]
+#     verbs: [ "get", "watch", "list", "delete", "update", "create", "patch" ]
+#   - apiGroups: [ "" ]
+#     resources: [ "pods" ]
+#     verbs: [ "get", "list", "watch" ]
+#   - apiGroups: [ "storage.k8s.io" ]
+#     resources: [ "volumeattributesclasses" ]
+#     verbs: [ "get", "list", "watch" ]
+# ---
+# kind: ClusterRoleBinding
+# apiVersion: rbac.authorization.k8s.io/v1
+# metadata:
+#   name: csi-xenorchestra-resizer-role
+# subjects:
+#   - kind: ServiceAccount
+#     name: csi-xenorchestra-controller-sa
+#     namespace: kube-system
+# roleRef:
+#   kind: ClusterRole
+#   name: csi-xenorchestra-external-resizer-role
+#   apiGroup: rbac.authorization.k8s.io

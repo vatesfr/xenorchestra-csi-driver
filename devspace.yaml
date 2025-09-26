@@ -1,0 +1,117 @@
+version: v2beta1
+name: tmp-xo-csi-git
+
+# This is a list of `pipelines` that DevSpace can execute (you can define your own)
+pipelines:
+  # This is the pipeline for the main command: `devspace dev` (or `devspace run-pipeline dev`)
+  dev:
+    run: |-
+      # run_dependencies --all       # 1. Deploy any projects this project needs (see "dependencies")
+      # ensure_pull_secrets --all    # 2. Ensure pull secrets
+      create_deployments node     # 3. Deploy Helm charts and manifests specfied as "deployments"
+      start_dev node               # 4. Start dev mode "node" (see "dev" section)
+      # Open VSCode as soon as we are done
+      # code --folder-uri vscode-remote://ssh-remote+node.devspace/app
+  dev-controller:
+    run: |-
+      create_deployments controller
+      start_dev controller
+
+# This is a list of `images` that DevSpace can build for this project
+# We recommend to skip image building during development (devspace dev) as much as possible
+images:
+  csi:
+    image: ghcr.io/vatesfr/xenorchestra-csi-driver
+    dockerfile: ./Dockerfile
+
+# This is a list of `deployments` that DevSpace can create for this project
+deployments:
+  node:
+    kubectl:
+      manifests:
+        - deploy/csi-xenorchestra-node-single.yaml
+  controller:
+    kubectl:
+      manifests:
+        - deploy/csi-xenorchestra-controller-dev.yaml
+
+# This is a list of `dev` containers that are based on the containers created by your deployments
+dev:
+  node:
+    # Search for the container that runs this image
+    # imageSelector: ghcr.io/vatesfr/xenorchestra-csi-driver
+    # # Search for pods with this label selector
+    labelSelector:
+      app: csi-xenorchestra-node-single
+    # Specify the namespace where the pod is deployed
+    namespace: kube-system
+    # Specify which container to target when multiple containers are found
+    container: xenorchestra-csi-driver
+    # Replace the container image with this dev-optimized image (allows to skip image building during development)
+    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.24-bookworm
+    # Remove security context to run as root
+    # patches:
+    #   - op: remove
+    #     path: spec.securityContext
+    # Sync files between the local filesystem and the development container
+    sync:
+      - path: ./bin/
+      - path: ./
+        uploadExcludeFile: .dockerignore
+        # - path: "${DEVSPACE_USER_HOME}/.gitconfig:/root/.gitconfig"
+        #   file: true
+        #   disableDownload: true
+
+        # Open a terminal and use the following command to start it
+    terminal:
+      command: ./devspace_start.sh
+    # Inject a lightweight SSH server into the container (so your IDE can connect to the remote dev env)
+    ssh:
+      enabled: true
+      localHostname: node.devspace
+    # Make the following commands from my local machine available inside the dev container
+    proxyCommands:
+      - command: devspace
+      - command: kubectl
+      - command: helm
+      - gitCredentials: true
+    # Forward the following ports to be able access your application via localhost
+    ports:
+      - port: "2345"
+
+  controller:
+    labelSelector:
+      app: csi-xenorchestra-controller
+    namespace: kube-system
+    container: xenorchestra-csi-driver
+    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.24-bookworm
+    sync:
+      # - path: ./bin/
+      - path: ./
+        uploadExcludeFile: .dockerignore
+      - path: ../xo-sdk-go/
+    terminal:
+      command: ./devspace_start.sh
+    ssh:
+      enabled: true
+      localHostname: controller.devspace
+    proxyCommands:
+      - command: devspace
+      - command: kubectl
+      - command: helm
+      - gitCredentials: true
+    ports:
+      - port: "2345"
+# Use the `commands` section to define repeatable dev workflows for this project 
+commands:
+  dev-controller:
+    command: |-
+      devspace run-pipeline dev-controller
+
+# Define dependencies to other projects with a devspace.yaml
+# dependencies:
+#   api:
+#     git: https://...  # Git-based dependencies
+#     tag: v1.0.0
+#   ui:
+#     path: ./ui        # Path-based dependencies (for monorepos)

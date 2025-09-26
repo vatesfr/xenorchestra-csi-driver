@@ -1,0 +1,28 @@
+{
+    // Utilisez IntelliSense pour en savoir plus sur les attributs possibles.
+    // Pointez pour afficher la description des attributs existants.
+    // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+        "name": "Connect and launch",
+        "type": "go",
+        "debugAdapter": "dlv-dap", // the default
+        "request": "launch",
+        "port": 2345,
+        "host": "localhost", // can skip for localhost
+        "mode": "exec",
+        "program": "/app/bin/xenorchestra-csi-amd64",
+        "args": [
+            "--v", "5",
+            "--node-name", "worker-1",
+            "--endpoint=unix:///csi/csi.sock"
+        ],
+        "substitutePath": [
+            { "from": "${workspaceFolder}", "to": "/app" },
+        ],
+        "showLog": true,
+        "trace": "verbose"
+        }
+    ]
+}

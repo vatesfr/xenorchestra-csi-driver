@@ -1,0 +1,55 @@
+version: "2"
+run:
+  build-tags:
+    - integration
+    - integration_api
+    - integration_cli
+    - integration_k8s
+    - integration_provision
+  issues-exit-code: 1
+  tests: true
+linters:
+  enable:
+    - goconst
+    - gosec
+    - lll
+    - misspell
+    - nakedret
+    - unconvert
+  settings:
+    govet:
+      disable:
+        - structtag
+    cyclop:
+      max-complexity: 30
+    dupl:
+      threshold: 100
+    lll:
+      line-length: 200
+      tab-width: 1
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard # Captures all standard packages if they do not match another section.
+        - default # Contains all imports that could not be matched to another section type.
+        - prefix(github.com/vatesfr) # Groups all imports with the specified Prefix.
+        - prefix(k8s.io) # Groups all imports with the specified Prefix.

@@ -1,0 +1,28 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: task-pv-volume
+spec:
+  storageClassName: csi-xenorchestra-sc
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  csi:
+    volumeHandle: "b05f63f2-692a-4833-9453-980a73f9f27f" # VDI uuid
+    driver: csi.xenorchestra.vates.tech
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: task-pv-volume-2
+spec:
+  storageClassName: csi-xenorchestra-sc
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  csi:
+    volumeHandle: "a9582e80-5ff9-4554-b7f7-af05d394274b" # VDI uuid
+    driver: csi.xenorchestra.vates.tech

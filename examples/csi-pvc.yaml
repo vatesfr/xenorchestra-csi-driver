@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-csi-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-xenorchestra-sc # defined in csi-storageclass.yaml
+  volumeName: task-pv-volume
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-csi-pvc-2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-xenorchestra-sc
+  volumeName: task-pv-volume-2

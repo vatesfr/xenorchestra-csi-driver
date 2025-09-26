@@ -1,0 +1,22 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: my-csi-app
+spec:
+  containers:
+    - name: my-frontend
+      image: busybox
+      volumeMounts:
+        - mountPath: "/data"
+          name: my-csi-volume
+        - mountPath: "/data-2"
+          name: my-csi-volume-2
+          readOnly: true
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+  volumes:
+    - name: my-csi-volume
+      persistentVolumeClaim:
+        claimName: xo-csi-pvc # defined in csi-pvc.yaml
+    - name: my-csi-volume-2
+      persistentVolumeClaim:
+        claimName: xo-csi-pvc-2 # defined in csi-pvc.yaml

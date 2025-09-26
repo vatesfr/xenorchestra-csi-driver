@@ -1,0 +1,45 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-xenorchestra-node-sa
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra
+    app.kubernetes.io/component: serviceaccount
+---
+# Used in case the Xo CCM isn't deployed and the node objects don't have the proper labels
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-node-role
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-external-attacher-role
+    app.kubernetes.io/component: clusterrole
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "nodes" ]
+    verbs: [ "get", "list", "watch" ]
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-node-binding
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-node-binding
+    app.kubernetes.io/component: clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: csi-xenorchestra-node-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-xenorchestra-node-role
+  apiGroup: rbac.authorization.k8s.io

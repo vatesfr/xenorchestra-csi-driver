@@ -1,0 +1,141 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: csi-xenorchestra-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-controller
+    app.kubernetes.io/component: plugin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-xenorchestra-controller
+  template:
+    metadata:
+      labels:
+        app: csi-xenorchestra-controller
+    spec:
+      hostNetwork: true
+      serviceAccountName: csi-xenorchestra-controller-sa
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: "node-role.kubernetes.io/master"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/controlplane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "CriticalAddonsOnly"
+          operator: "Exists"
+          effect: "NoSchedule"
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        # TODO: Add provisioner, attacher, resizer, snapshotter implementation when ready
+        - name: liveness-probe
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.17.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=localhost:29602
+            - --v=2
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+        - name: xenorchestra-csi-driver
+          image: ghcr.io/vatesfr/xenorchestra-csi-driver:edge
+          imagePullPolicy: Always
+          args:
+            - "--v=5"
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--node-name=$(KUBE_NODE_NAME)"
+            - "--config-file=/etc/xenorchestra/config.yaml"
+          ports:
+            - containerPort: 29602
+              name: healthz
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              host: localhost
+              path: /healthz
+              port: 29602
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: /etc/xenorchestra
+              name: xo-cloud-config
+              readOnly: true
+          # resources:
+          #   limits:
+          #     memory: 500Mi
+          #   requests:
+          #     cpu: 10m
+          #     memory: 20Mi
+        - name: csi-attacher
+          image: registry.k8s.io/sig-storage/csi-attacher:v4.10.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--http-endpoint=:8080"
+            - "--retry-interval-max=30s"
+            - "--timeout=10m"
+          env:
+            - name: MY_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          ports:
+            - containerPort: 8080
+              name: http-endpoint
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /metrics
+              port: http-endpoint
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: xo-cloud-config
+          secret:
+            secretName: xenorchestra-cloud-controller-manager
+            defaultMode: 416

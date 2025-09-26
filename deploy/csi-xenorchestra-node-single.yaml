@@ -1,0 +1,135 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: csi-xenorchestra-node-single
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-controller
+    app.kubernetes.io/component: plugin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-xenorchestra-node-single
+  template:
+    metadata:
+      labels:
+        app: csi-xenorchestra-node-single
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      serviceAccountName: csi-xenorchestra-node-sa
+      nodeSelector:
+        kubernetes.io/os: linux
+        # Uncomment the following line to deploy specifically on worker-1 node
+        kubernetes.io/hostname: worker-1
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: "Exists"
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: liveness-probe
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.17.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=localhost:29603
+            - --v=2
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+        - name: node-driver-registrar
+          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.15.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --kubelet-registration-path=/var/snap/microk8s/common/var/lib/kubelet/plugins/csi.xenorchestra.vates.tech/csi.sock
+            - --v=5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+        - name: xenorchestra-csi-driver
+          image: ghcr.io/vatesfr/xenorchestra-csi-driver:edge
+          imagePullPolicy: Always # TODO: Change to IfNotPresent for prod
+          args:
+            - "--v=5"
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--node-name=$(KUBE_NODE_NAME)"
+            - "--config-file=/etc/xenorchestra/config.yaml"
+          ports:
+            - containerPort: 29603
+              name: healthz
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              host: localhost
+              path: /healthz
+              port: 29603
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: /var/snap/microk8s/common/var/lib/kubelet/
+              mountPropagation: Bidirectional
+              name: mountpoint-dir
+            - mountPath: /dev
+              name: device-dir
+            - mountPath: /etc/xenorchestra
+              name: xo-cloud-config
+              readOnly: true
+      volumes:
+        - hostPath:
+            path: /var/snap/microk8s/common/var/lib/kubelet/plugins/csi.xenorchestra.vates.tech
+            type: DirectoryOrCreate
+          name: socket-dir
+        - hostPath:
+            path: /var/snap/microk8s/common/var/lib/kubelet/
+            type: DirectoryOrCreate
+          name: mountpoint-dir
+        - hostPath:
+            path: /var/snap/microk8s/common/var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
+          name: registration-dir
+        - hostPath:
+            path: /dev
+            type: Directory
+          name: device-dir
+        - name: xo-cloud-config
+          secret:
+            secretName: xenorchestra-cloud-controller-manager
+            defaultMode: 416
