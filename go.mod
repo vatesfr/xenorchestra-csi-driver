@@ -9,7 +9,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang/protobuf v1.5.4
 	github.com/vatesfr/xenorchestra-cloud-controller-manager v0.1.1-0.20251017135711-4e8e4ef23d5c
-	github.com/vatesfr/xenorchestra-go-sdk v1.7.1-0.20251029111114-64d674b92cbf
+	github.com/vatesfr/xenorchestra-go-sdk v1.9.0
 	google.golang.org/grpc v1.70.0
 	k8s.io/apimachinery v0.33.3
 	k8s.io/client-go v0.33.3
@@ -45,7 +45,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
+	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
