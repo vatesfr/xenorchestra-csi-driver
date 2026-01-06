@@ -118,4 +118,4 @@ images-checks: images
 
 .PHONY: images-cosign
 images-cosign:
-	@cosign sign --yes $(COSING_ARGS) --recursive $(IMAGE):$(TAG)
+	@cosign sign --yes $(COSING_ARGS) $(IMAGE_NAME)@$$(docker inspect $(IMAGE_NAME):$(TAG) --format='{{.Id}}')
