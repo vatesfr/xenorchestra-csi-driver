@@ -118,4 +118,7 @@ images-checks: images
 
 .PHONY: images-cosign
 images-cosign:
-	@cosign sign --yes $(COSING_ARGS) $(IMAGE_NAME)@$$(docker inspect $(IMAGE_NAME):$(TAG) --format='{{.Id}}')
+	$(eval IMAGE_DIGEST=$(shell docker buildx imagetools inspect $(IMAGE_NAME):$(TAG) --format '{{json .}}' | jq -r '.manifest.digest'))
+	@echo "Image digest: $(IMAGE_DIGEST)"
+	@echo "Signing: $(IMAGE_NAME)@$(IMAGE_DIGEST)"
+	@cosign sign --yes $(COSING_ARGS) $(IMAGE_NAME)@$(IMAGE_DIGEST)
