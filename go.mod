@@ -5,7 +5,7 @@ go 1.24.2
 toolchain go1.24.7
 
 require (
-	github.com/container-storage-interface/spec v1.11.0
+	github.com/container-storage-interface/spec v1.12.0
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang/protobuf v1.5.4
 	github.com/vatesfr/xenorchestra-cloud-controller-manager v0.1.1-0.20251017135711-4e8e4ef23d5c
