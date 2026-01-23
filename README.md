@@ -38,11 +38,17 @@ An example of an install with kubectl can be found in the './deploy' folder. You
 ### Quick Start with the PoC
 
 ```bash
+# Create a registry credential secret for ghcr.io
+kubectl -n kube-system create secret docker-registry regcred --docker-server=<your-registry-server> --docker-username=<your-name> --docker-password=<your-pword> --docker-email=<your-email>
+
 # Install the driver
 ./deploy/install-driver.sh
 
+# Alternative: Install the driver from local repo
+./deploy/install-driver.sh local
+
 # Create a StorageClass
-kubectl apply -f csi-storageclass.yaml
+kubectl apply -f examples/csi-storageclass.yaml
 
 # Install the driver
 ./deploy/uninstall-driver.sh

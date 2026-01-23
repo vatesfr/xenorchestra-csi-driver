@@ -36,3 +36,4 @@ xo-config.yaml
 
 .vscode/*
 !.vscode/launch.json
+config.yaml
