@@ -3,7 +3,7 @@ USERNAME ?= vatesfr
 PROJECT ?= xenorchestra-csi-driver
 PKG = github.com/vatesfr/xenorchestra-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
-IMAGE_NAME ?= $(REGISTRY)/$(USERNAME)/xenorchestra-csi
+IMAGE_NAME ?= $(REGISTRY)/$(USERNAME)/xenorchestra-csi-driver
 PLUGIN_NAME = xenorchestra-csi
 VERSION ?= $(shell git describe --dirty --tag --match='v*')
 TAG ?= $(VERSION)
