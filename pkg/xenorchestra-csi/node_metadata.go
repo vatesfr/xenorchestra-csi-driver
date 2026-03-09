@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vatesfr/xenorchestra-cloud-controller-manager/pkg/xenorchestra"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclient "k8s.io/client-go/kubernetes"
@@ -60,8 +60,8 @@ func (n *NodeMetadataFromKubernetes) GetNodeMetadata() (*NodeMetadata, error) {
 		return nil, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	hostId := node.Labels["topology.k8s.xenorchestra/host_id"]
-	poolId := node.Labels["topology.k8s.xenorchestra/pool_id"]
+	hostId := node.Labels[xok8s.XOLabelTopologyHostID]
+	poolId := node.Labels[xok8s.XOLabelTopologyPoolID]
 
 	return &NodeMetadata{
 		NodeId: nodeId,
@@ -88,16 +88,14 @@ func getNodeIdFromDmiProductUUID() (string, error) {
 	return uuid, nil
 }
 
-/**
- * Use the XoClient to get all needed metadata
- */
+// NodeMetadataFromXoClient uses the XoClient to get all needed metadata.
 type NodeMetadataFromXoClient struct {
 	kclient  kclient.Interface
-	xoClient *xenorchestra.XoClient
+	xoClient *xok8s.XoClient
 	nodeName string
 }
 
-func NewNodeMetadataFromXoClient(kubeClient kclient.Interface, xoClient *xenorchestra.XoClient, nodeName string) *NodeMetadataFromXoClient {
+func NewNodeMetadataFromXoClient(kubeClient kclient.Interface, xoClient *xok8s.XoClient, nodeName string) *NodeMetadataFromXoClient {
 	return &NodeMetadataFromXoClient{
 		xoClient: xoClient,
 		kclient:  kubeClient,
@@ -116,7 +114,7 @@ func (n *NodeMetadataFromXoClient) GetNodeMetadata() (*NodeMetadata, error) {
 	}
 	return &NodeMetadata{
 		NodeId: vm.ID.String(),
-		HostId: vm.Container,
+		HostId: vm.Container.String(),
 		PoolId: poolID.String(),
 	}, nil
 }

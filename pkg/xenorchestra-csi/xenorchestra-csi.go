@@ -20,7 +20,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
-	xoccm "github.com/vatesfr/xenorchestra-cloud-controller-manager/pkg/xenorchestra"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	kube "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -77,7 +77,7 @@ func NewDriver(options *DriverOptions) Driver {
 		klog.Warningf("Failed to load config from file %s: %v, falling back to environment variables", options.ConfigFile, err)
 		// TODO: Add fallback to env variables
 	}
-	xoClient, err := xoccm.NewXOClient(&xoConfig)
+	xoClient, err := xok8s.NewXOClient(&xoConfig)
 	if err != nil {
 		klog.Fatalf("failed to create Xen Orchestra client: %v", err)
 	}

@@ -17,25 +17,16 @@ limitations under the License.
 package xenorchestracsi
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 
-	xoccm "github.com/vatesfr/xenorchestra-cloud-controller-manager/pkg/xenorchestra"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 )
 
-// LoadXOConfigFromFile loads the XO configuration from the mounted secret file
-// using the same format as the CCM's readCloudConfig function
-func LoadXOConfigFromFile(configFile string) (xoccm.XoConfig, error) {
-	// Check if file exists
+// LoadXOConfigFromFile loads the XO configuration from the mounted secret file.
+func LoadXOConfigFromFile(configFile string) (xok8s.XoConfig, error) {
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		return xoccm.XoConfig{}, fmt.Errorf("config file %s does not exist", configFile)
+		return xok8s.XoConfig{}, fmt.Errorf("config file %s does not exist", configFile)
 	}
-
-	// Read file content
-	content, err := os.ReadFile(configFile)
-	if err != nil {
-		return xoccm.XoConfig{}, fmt.Errorf("failed to read config file %s: %v", configFile, err)
-	}
-	return xoccm.ReadCloudConfig(bytes.NewReader(content))
+	return xok8s.ReadCloudConfigFromFile(configFile)
 }
