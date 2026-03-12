@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/vatesfr/xenorchestra-cloud-controller-manager/pkg/xenorchestra"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	"k8s.io/klog/v2"
 )
@@ -58,8 +58,8 @@ func (driver *xenorchestraCSIDriver) NodeGetInfo(ctx context.Context, req *csi.N
 		NodeId: metadata.NodeId,
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{
-				xenorchestra.XOLabelTopologyPoolID: metadata.PoolId,
-				xenorchestra.XOLabelTopologyHostID: metadata.HostId,
+				xok8s.XOLabelTopologyPoolID: metadata.PoolId,
+				xok8s.XOLabelTopologyHostID: metadata.HostId,
 			},
 		},
 	}, nil
