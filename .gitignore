@@ -37,3 +37,6 @@ xo-config.yaml
 .vscode/*
 !.vscode/launch.json
 config.yaml
+
+# Auto-load environment file
+.autoenv.zsh

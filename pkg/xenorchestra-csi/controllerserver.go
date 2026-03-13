@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	xoV1 "github.com/vatesfr/xenorchestra-go-sdk/client"
+	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 
 	"k8s.io/klog/v2"
 )
@@ -88,8 +88,8 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(context.Context, *cs
 func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	klog.V(5).InfoS("ControllerPublishVolume called", "request", req)
 
-	vmUUID := req.GetNodeId()
-	if vmUUID == "" {
+	vmUUID, err := uuid.FromString(req.GetNodeId())
+	if err != nil || vmUUID == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
 	}
 
@@ -98,24 +98,24 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	}
 
 	// Volume ID is the VDI UUID
-	volumeId := req.GetVolumeId()
-	if volumeId == "" {
+	volumeId, err := uuid.FromString(req.GetVolumeId())
+	if err != nil || volumeId == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
 	}
 
-	vdi, err := driver.xoClient.GetVDI(ctx, volumeId)
+	vdi, err := driver.xoClient.VDI().Get(ctx, volumeId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get VDI: %v", err)
 	}
 
 	// Get Node/VM
-	nodeVM, err := driver.xoClient.VM().GetByID(ctx, uuid.FromStringOrNil(vmUUID))
+	nodeVM, err := driver.xoClient.VM().GetByID(ctx, vmUUID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get VM by ID %s: %v", vmUUID, err)
 	}
-	if nodeVM.PoolID != uuid.FromStringOrNil(vdi.PoolId) {
-		klog.ErrorS(err, "Cannot attach VDI from different pool than the VM", "vdiPool", vdi.PoolId, "vmPool", nodeVM.PoolID)
-		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolId, nodeVM.PoolID)
+	if nodeVM.PoolID != vdi.PoolID {
+		klog.ErrorS(err, "Cannot attach VDI from different pool than the VM", "vdiPool", vdi.PoolID, "vmPool", nodeVM.PoolID)
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolID, nodeVM.PoolID)
 	}
 
 	// Check the VDI is not already attached to another VM
@@ -124,14 +124,15 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.Internal, "failed to check if VDI is already attached: %v", err)
 	}
 
+	// TODO: Do I still need full VBDs here or just the IDs?
 	if len(vbds) > 0 {
-		var vbdToAttach *xoV1.VBD
+		var vbdToAttach *payloads.VBD
 		for _, vbd := range vbds {
-			if vbd.Attached && vbd.VmId != vmUUID {
-				klog.ErrorS(err, "VDI is already attached to another VM", "vdi", vdi, "vmID", vbd.VmId)
-				return nil, status.Errorf(codes.FailedPrecondition, "VDI %s is already attached to another VM %s", vdi.VDIId, vbd.VmId)
-			} else if vbd.VmId == vmUUID {
-				vbdToAttach = &vbd
+			if vbd.Attached && vbd.VM != vmUUID {
+				klog.ErrorS(err, "VDI is already attached to another VM", "vdi", vdi, "vmID", vbd.VM)
+				return nil, status.Errorf(codes.FailedPrecondition, "VDI %s is already attached to another VM %s", vdi.ID, vbd.VM)
+			} else if vbd.VM == vmUUID {
+				vbdToAttach = vbd
 				// Continue to check all VDB to be sure the VDI ins't connected to any VM
 				continue
 			}
@@ -148,7 +149,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 				}
 				// Should be fixed by the addition of Device field in VBD
 				return &csi.ControllerPublishVolumeResponse{
-					PublishContext: publishContextFromVBD(vbdConnected),
+					PublishContext: publishContextFromVBD(*vbdConnected),
 				}, nil
 			} else {
 				klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
@@ -164,7 +165,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	}
 
 	klog.V(5).InfoS("Attaching VDI to VM", "vdi", vdi, "vmUUID", vmUUID)
-	vbd, err := driver.xoClient.AttachVDIToVM(ctx, vdi, vmUUID)
+	vbd, err := driver.xoClient.AttachVDIToVM(ctx, *vdi, vmUUID)
 	if err != nil {
 		klog.ErrorS(err, "Failed to attach VDI to VM", "vdi", vdi, "vmUUID", vmUUID)
 		return nil, status.Errorf(codes.Internal, "Failed to attach VDI to VM: %v", err)
@@ -173,7 +174,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 
 	// Return the publish context with the VBD ID and device name
 	return &csi.ControllerPublishVolumeResponse{
-		PublishContext: publishContextFromVBD(vbd),
+		PublishContext: publishContextFromVBD(*vbd),
 	}, nil
 }
 
@@ -181,18 +182,18 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	klog.V(5).InfoS("ControllerUnpublishVolume called", "request", req)
 
-	vmUUID := req.GetNodeId()
-	if vmUUID == "" {
+	vmUUID, err := uuid.FromString(req.GetNodeId())
+	if err != nil || vmUUID == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
 	}
 
 	// Volume ID is the VDI UUID
-	volumeId := req.GetVolumeId()
-	if volumeId == "" {
+	volumeId, err := uuid.FromString(req.GetVolumeId())
+	if err != nil || volumeId == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
 	}
 
-	err := driver.xoClient.DisconnectVBDFromVM(ctx, xoV1.VDI{VDIId: volumeId}, vmUUID)
+	err = driver.xoClient.DisconnectVBDFromVM(ctx, payloads.VDI{ID: volumeId}, vmUUID)
 	if err != nil {
 		klog.ErrorS(err, "Failed to detach VDI from VM", "vdiID", volumeId, "vmUUID", vmUUID)
 		return nil, status.Errorf(codes.Internal, "Failed to detach VDI from VM: %v", err)
@@ -250,9 +251,9 @@ func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(context.Context,
 	return nil, status.Error(codes.Unimplemented, "ValidateVolumeCapabilities is not implemented")
 }
 
-func publishContextFromVBD(vbd xoV1.VBD) map[string]string {
+func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 	return map[string]string{
-		"device": vbd.Device,
-		"vbd":    vbd.Id,
+		"device": *vbd.Device,
+		"vbd":    vbd.ID.String(),
 	}
 }

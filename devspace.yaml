@@ -84,7 +84,7 @@ dev:
       app: csi-xenorchestra-controller
     namespace: kube-system
     container: xenorchestra-csi-driver
-    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.24-bookworm
+    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.25-bookworm
     sync:
       # - path: ./bin/
       - path: ./
