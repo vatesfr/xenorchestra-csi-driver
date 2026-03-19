@@ -17,95 +17,101 @@ package xenorchestracsi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	xoV1 "github.com/vatesfr/xenorchestra-go-sdk/client"
+	"github.com/gofrs/uuid"
+
+	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library"
 
 	"k8s.io/klog/v2"
 )
 
+// ErrVBDNotFound is returned when no VBD matches the given VDI and VM combination.
+var ErrVBDNotFound = errors.New("VBD not found")
+
 // This interface extends the library.Library interface to add methods specific to Xen Orchestra operations needed by the CSI driver.
 // It's done to encapsulate call to the legacy v1 client waiting for the v2 client to support all required operations.
 type XoClient interface {
 	library.Library
-	GetVBDFromVDIAndVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error)
-	ConnectVBDToVM(ctx context.Context, vbd xoV1.VBD) (xoV1.VBD, error)
-	DisconnectVBDFromVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) error
-	AttachVDIToVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error)
-	WaitForVDIToBeFullyAttached(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error)
-	IsVDIUsedAnywhere(ctx context.Context, vdi xoV1.VDI) ([]xoV1.VBD, error)
-	GetVDI(ctx context.Context, vdiUUID string) (xoV1.VDI, error)
+	GetVBDFromVDIAndVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
+	ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error)
+	DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
+	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
+	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
+	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 }
 
 type xoClient struct {
 	library.Library
-	v1Client *xoV1.Client
 }
 
 func NewXoClient(libraryService library.Library) XoClient {
-	// HACK: use the old client to call the JRPC method directly
-	rawV1Client := libraryService.V1Client().(*xoV1.Client)
 	return xoClient{
-		Library:  libraryService,
-		v1Client: rawV1Client,
+		Library: libraryService,
 	}
 }
 
-func (c xoClient) GetVBDFromVDIAndVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error) {
-	// TODO: Use the REST API to get the VBD
-	var allVDBs map[string]xoV1.VBD
-	err := c.V1Client().GetAllObjectsOfType(xoV1.VBD{}, &allVDBs)
+func (c xoClient) GetVBDFromVDIAndVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error) {
+	vbs, err := c.VBD().GetAll(ctx, 0, fmt.Sprintf("VDI:%s VM:%s", vdi.ID, vmUUID))
 	if err != nil {
-		return xoV1.VBD{}, err
+		klog.ErrorS(err, "Failed to get VBDs for VDI and VM", "vdi", vdi, "vmUUID", vmUUID)
+		return nil, err
 	}
 
-	for _, vdb := range allVDBs {
-		if vdb.VDI == vdi.VDIId && vdb.VmId == vmUUID {
-			return vdb, nil
-		}
+	if len(vbs) > 1 {
+		klog.InfoS("The VDI is attached more than once to the VM. Return the first result.")
 	}
-	return xoV1.VBD{}, fmt.Errorf("VBD not found for vdi=%s and vm=%s", vdi.VDIId, vmUUID)
+
+	if len(vbs) == 0 {
+		return nil, fmt.Errorf("vdi=%s vm=%s: %w", vdi.ID, vmUUID, ErrVBDNotFound)
+	}
+	return vbs[0], nil
 }
 
-func (c xoClient) ConnectVBDToVM(ctx context.Context, vbd xoV1.VBD) (xoV1.VBD, error) {
-	err := c.V1Client().ConnectDisk(xoV1.Disk{
-		VBD: vbd,
-	})
+func (c xoClient) ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error) {
+	taskID, err := c.VBD().Connect(ctx, vbd.ID)
 	if err != nil {
 		klog.ErrorS(err, "Failed to connect existing VBD to the node", "vbd", vbd)
-		return xoV1.VBD{}, err
+		return nil, err
 	}
 
-	return vbd, nil
+	task, err := c.Task().Wait(ctx, taskID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to wait for task to complete", "taskID", taskID, "taskResult", task.Result)
+		return nil, err
+	}
+
+	updatedVBD, err := c.VBD().Get(ctx, vbd.ID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to get updated VBD after connecting", "vbd", vbd)
+		return nil, err
+	}
+
+	return updatedVBD, nil
 }
 
-func (c xoClient) AttachVDIToVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error) {
-	// TODO: Use the v2 client and REST API
-	var result bool
-
-	err := c.v1Client.Call("vm.attachDisk", map[string]interface{}{
-		"mode": "RW", // TODO: change it if "ReadOnly" is required
-		"vdi":  vdi.VDIId,
-		"vm":   vmUUID,
-	}, &result)
+func (c xoClient) AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error) {
+	vbdID, err := c.VBD().Create(ctx, &payloads.CreateVBDParams{
+		VM:   vmUUID,
+		VDI:  vdi.ID,
+		Mode: payloads.VBDModeRW, // TODO: change it if "ReadOnly" is required
+	})
 	if err != nil {
-		return xoV1.VBD{}, err
-	}
-
-	if !result {
-		return xoV1.VBD{}, fmt.Errorf("failed to attach VDI %s to VM %s: unknown error", vdi.VDIId, vmUUID)
+		klog.ErrorS(err, "Failed to create VBD to attach VDI to the node", "vdi", vdi, "vmUUID", vmUUID)
+		return nil, err
 	}
 
 	// Wait for the attach operation to complete
-	vbd, err := c.WaitForVDIToBeFullyAttached(ctx, vdi, vmUUID)
+	vbd, err := c.WaitForVDIToBeFullyAttached(ctx, vbdID)
 	if err != nil {
-		klog.ErrorS(err, "Failed to wait for attach disk task", "vdi", vdi.VDIId, "vm", vmUUID)
-		return xoV1.VBD{}, err
+		klog.ErrorS(err, "Failed to wait for attach disk task", "vdi", vdi.ID, "vm", vmUUID)
+		return nil, err
 	}
 
-	klog.V(4).InfoS("attachDiskToVM: disk attached", "vdi", vdi.VDIId, "vm", vmUUID, "vbd", vbd)
+	klog.V(4).InfoS("attachDiskToVM: disk attached", "vdi", vdi.ID, "vm", vmUUID, "vbd", vbd)
 
 	return vbd, nil
 }
@@ -115,25 +121,25 @@ func (c xoClient) AttachVDIToVM(ctx context.Context, vdi xoV1.VDI, vmUUID string
 // Hardcoded timeout of 2 minutes.
 // NOTE: This is required because the VBD can be attached but returned without a device name when `vm.attach` command succeeded.
 // See: https://github.com/vatesfr/xen-orchestra/pull/9192
-func (c xoClient) WaitForVDIToBeFullyAttached(ctx context.Context, vdi xoV1.VDI, vmUUID string) (xoV1.VBD, error) {
+func (c xoClient) WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error) {
 	timeout := time.After(2 * time.Minute)
 	tick := time.Tick(1 * time.Second)
 
 	for {
 		select {
 		case <-timeout:
-			return xoV1.VBD{}, fmt.Errorf("timed out waiting for VDI %s to be attached to VM %s", vdi.VDIId, vmUUID)
+			return nil, fmt.Errorf("timed out waiting for VBD %s to be attached", vbdID)
 		case <-tick:
-			vbd, err := c.GetVBDFromVDIAndVM(ctx, vdi, vmUUID)
+			vbd, err := c.VBD().Get(ctx, vbdID)
 			if err != nil {
-				klog.ErrorS(err, "Failed to get VBD while waiting for disk to be attached", "vdi", vdi.VDIId, "vm", vmUUID)
+				klog.ErrorS(err, "Failed to get VBD while waiting for disk to be attached", "vbd", vbdID)
 				continue
 			}
-			if vbd.Attached && vbd.Device != "" {
-				klog.V(4).InfoS("Disk is now attached", "vbd", vbd.Id, "vm", vmUUID, "device", vbd.Device)
+			if vbd.Attached && vbd.Device != nil && *vbd.Device != "" {
+				klog.V(4).InfoS("Disk is now attached", "vbd", vbd.ID, "vm", vbd.VM, "device", vbd.Device)
 				return vbd, nil
 			}
-			klog.V(5).InfoS("Disk not yet attached, waiting...", "vdi", vdi.VDIId, "vm", vmUUID)
+			klog.V(5).InfoS("Disk not yet attached, waiting...", "vbd", vbd.ID, "vm", vbd.VM)
 		}
 	}
 }
@@ -141,34 +147,28 @@ func (c xoClient) WaitForVDIToBeFullyAttached(ctx context.Context, vdi xoV1.VDI,
 // IsVDIUsedAnywhere checks if a VDI is used by any VM in the Xen Orchestra instance.
 // If it is used, it returns the list of VBDs it is added to.
 // If it is not used, it returns an empty slice.
-func (c xoClient) IsVDIUsedAnywhere(ctx context.Context, vdi xoV1.VDI) ([]xoV1.VBD, error) {
-	// TODO: Use v2 client and Rest API with filter: VDI:"<vdi-id>"
-	var allVDBs map[string]xoV1.VBD
-	err := c.V1Client().GetAllObjectsOfType(xoV1.VBD{}, &allVDBs)
+func (c xoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error) {
+	vbds, err := c.VBD().GetAll(ctx, 0, fmt.Sprintf("VDI:%s", vdi.ID))
 	if err != nil {
 		return nil, err
 	}
 
-	var vbds []xoV1.VBD
-	for _, vdb := range allVDBs {
-		if vdb.VDI == vdi.VDIId {
-			vbds = append(vbds, vdb)
-		}
-	}
 	return vbds, nil
 }
 
-func (c xoClient) GetVDI(ctx context.Context, vdiUUID string) (xoV1.VDI, error) {
-	// TODO: Use v2 client and REST API
-	return c.V1Client().GetVDI(xoV1.VDI{VDIId: vdiUUID})
-}
-
-func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi xoV1.VDI, vmUUID string) error {
+func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
 	vbd, err := c.GetVBDFromVDIAndVM(ctx, vdi, vmUUID)
 	if err != nil {
 		return err
 	}
-	return c.V1Client().DisconnectDisk(xoV1.Disk{
-		VBD: vbd,
-	})
+	taskID, err := c.VBD().Disconnect(ctx, vbd.ID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to disconnect VBD from the node", "vbdID", vbd.ID)
+		return err
+	}
+	task, err := c.Task().Wait(ctx, taskID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to wait for task to complete", "taskID", taskID, "taskResult", task.Result)
+	}
+	return err
 }
