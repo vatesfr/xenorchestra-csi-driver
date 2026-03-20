@@ -43,8 +43,6 @@ echo "Installing Xen Orchestra CSI driver, version: $ver ..."
 kubectl apply -f $repo/csi-xenorchestra-driver.yaml
 kubectl apply -f $repo/rbac-csi-xenorchestra-node.yaml
 kubectl apply -f $repo/csi-xenorchestra-node.yaml
-
-# Not needed yet
 kubectl apply -f $repo/rbac-csi-xenorchestra-controller.yaml
 kubectl apply -f $repo/csi-xenorchestra-controller.yaml
 
