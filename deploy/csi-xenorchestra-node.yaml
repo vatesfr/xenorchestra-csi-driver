@@ -37,7 +37,7 @@ spec:
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
-          image: registry.k8s.io/sig-storage/livenessprobe:v2.17.0
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.18.0
           args:
             - --csi-address=/csi/csi.sock
             - --http-endpoint=localhost:29603
@@ -53,7 +53,7 @@ spec:
               drop:
                 - ALL
         - name: node-driver-registrar
-          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.15.0
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.16.0
           args:
             - --csi-address=/csi/csi.sock
             - --kubelet-registration-path=/var/snap/microk8s/common/var/lib/kubelet/plugins/csi.xenorchestra.vates.tech/csi.sock
