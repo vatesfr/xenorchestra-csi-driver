@@ -3,7 +3,7 @@ module github.com/vatesfr/xenorchestra-csi-driver
 go 1.25.8
 
 require (
-	github.com/container-storage-interface/spec v1.11.0
+	github.com/container-storage-interface/spec v1.12.0
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang/protobuf v1.5.4
 	github.com/vatesfr/xenorchestra-go-sdk v1.13.0
