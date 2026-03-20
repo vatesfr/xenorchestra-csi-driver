@@ -7,7 +7,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang/protobuf v1.5.4
 	github.com/vatesfr/xenorchestra-go-sdk v1.13.0
-	github.com/vatesfr/xenorchestra-k8s-common v0.1.0
+	github.com/vatesfr/xenorchestra-k8s-common v0.2.0
 	google.golang.org/grpc v1.70.0
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2

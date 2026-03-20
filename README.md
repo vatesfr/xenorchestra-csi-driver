@@ -97,7 +97,7 @@ Name | Meaning | Example | Required | Default
 
 ### Security & Configuration
 - [ ] Use with Xen Orchestra Cloud Controller Manager
-- [ ] Alternative for credential management (env variables?)
+- [x] Alternative for credential management (environment variables supported)
 - [ ] Check RBAC policies
 
 ### Performance & Monitoring
