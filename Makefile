@@ -68,16 +68,20 @@ build: ## Build
 		-o bin/${PLUGIN_NAME}-$(ARCH) ./cmd/${PLUGIN_NAME}
 
 .PHONY: build-debug
-build-debug:
+build-debug: ## Build with debug symbols
 	GOOS=$(OS) GOARCH=$(ARCH) go build -gcflags=all="-N -l" -o bin/${PLUGIN_NAME}-$(ARCH) ./cmd/${PLUGIN_NAME}
 
 .PHONY: remote-debug
-remote-debug: build-debug
+remote-debug: build-debug ## Build with debug and start Delve in DAP mode
 	dlv dap --listen=:2345
 
 .PHONY: lint
 lint: ## Lint Code
 	golangci-lint run --config .golangci.yml
+
+.PHONY: vuln
+vuln: ## Check for known vulnerabilities
+	govulncheck ./...
 
 release-update:
 	git-chglog --config hack/chglog-config.yml -o CHANGELOG.md

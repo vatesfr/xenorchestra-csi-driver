@@ -48,23 +48,24 @@ dev:
     # Specify which container to target when multiple containers are found
     container: xenorchestra-csi-driver
     # Replace the container image with this dev-optimized image (allows to skip image building during development)
-    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.24-bookworm
+    devImage: golang:1.26.1-trixie
+    workingDir: /app
     # Remove security context to run as root
     # patches:
     #   - op: remove
     #     path: spec.securityContext
     # Sync files between the local filesystem and the development container
     sync:
-      - path: ./bin/
-      - path: ./
+      - path: ./bin/:/app/bin
+      - path: ./:/app
         uploadExcludeFile: .dockerignore
         # - path: "${DEVSPACE_USER_HOME}/.gitconfig:/root/.gitconfig"
         #   file: true
         #   disableDownload: true
-
         # Open a terminal and use the following command to start it
     terminal:
-      command: ./devspace_start.sh
+      # command: ./devspace_start.sh
+      command: "bash"
     # Inject a lightweight SSH server into the container (so your IDE can connect to the remote dev env)
     ssh:
       enabled: true
@@ -84,12 +85,13 @@ dev:
       app: csi-xenorchestra-controller
     namespace: kube-system
     container: xenorchestra-csi-driver
-    devImage: git.vates.tech/cyrille.gandon/devspace-go:1.24-bookworm
+    devImage: golang:1.26.1-trixie
+    workingDir: /app
     sync:
-      # - path: ./bin/
-      - path: ./
+      # - path: ./bin/:/app/bin
+      - path: ./:/app
         uploadExcludeFile: .dockerignore
-      - path: ../xo-sdk-go/
+      - path: ../xo-sdk-go/:/app/xo-sdk-go
     terminal:
       command: ./devspace_start.sh
     ssh:
@@ -107,6 +109,14 @@ commands:
   dev-controller:
     command: |-
       devspace run-pipeline dev-controller
+
+hooks:
+  - name: "install required packages"
+    container:
+      imageSelector: golang:1.26.1-trixie
+      once: true
+    command: "go install github.com/go-delve/delve/cmd/dlv@latest"
+    events: [ "devCommand:before:sync" ]
 
 # Define dependencies to other projects with a devspace.yaml
 # dependencies:
