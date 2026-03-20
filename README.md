@@ -26,7 +26,8 @@ It is recommended to install the Xen Orchestra CCM in addition to the CSI driver
 
 ## Documentation
 
-TODO. See below for a short one.
+- [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static provisioning.
+- [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
 
 ## Install driver on a Kubernetes cluster
 
