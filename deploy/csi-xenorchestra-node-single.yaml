@@ -11,6 +11,8 @@ metadata:
     app.kubernetes.io/component: plugin
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: csi-xenorchestra-node-single
@@ -96,6 +98,10 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
+          # Uncomment to use env from secret instead of mounted config file for local dev
+          # envFrom:
+          #   - secretRef:
+          #       name: xo-config
           securityContext:
             privileged: true
             capabilities:
