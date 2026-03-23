@@ -73,6 +73,48 @@ kubectl -n kube-system create secret generic xenorchestra-cloud-controller-manag
 
 > ℹ️ The secret name `xenorchestra-cloud-controller-manager` is shared with the CCM by convention.
 
+### Alternative: Environment Variable Configuration
+
+Instead of using a config file secret, you can configure the driver using environment variables.
+This can be useful for development or testing scenarios.
+
+The driver supports the following environment variables:
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `XOA_URL` | Xen Orchestra API URL | Yes | — |
+| `XOA_TOKEN` | API token for authentication | Yes (if not using username/password) | — |
+| `XOA_INSECURE` | Skip TLS verification | No | `false` |
+
+**Example:**
+
+Create a `.env` file (e.g., `xo-config.env`):
+
+```env
+# Xen Orchestra configuration
+XOA_URL=https://xo.example.com
+XOA_TOKEN="your-api-token-here"
+XOA_INSECURE=false
+```
+
+Then create a secret from the `.env` file:
+
+```bash
+# Create secret from .env file
+kubectl -n kube-system create secret generic xenorchestra-config \
+  --from-env-file=xo-config.env
+```
+
+```yaml
+# In your deployment manifest
+envFrom:
+  - secretRef:
+      name: xenorchestra-config
+```
+
+> ⚠️ **Note:** Environment variables take precedence only when the config file is not found.
+> The driver first tries to load configuration from the mounted config file, and falls back to environment variables if the file is missing or invalid.
+
 ### 3. Install the driver
 
 Using the installation script (recommended):
@@ -94,6 +136,24 @@ The script applies the following manifests in order:
 | `csi-xenorchestra-node.yaml` | Node plugin `DaemonSet` |
 | `rbac-csi-xenorchestra-controller.yaml` | Controller RBAC |
 | `csi-xenorchestra-controller.yaml` | Controller `StatefulSet` |
+
+**Customizing for Environment Variables:**
+
+If you want to use environment variables instead of the config file, modify the controller deployment:
+
+```yaml
+# In deploy/csi-xenorchestra-controller.yaml
+containers:
+  - name: xenorchestra-csi-driver
+    # ... existing args ...
+    envFrom:
+      - secretRef:
+          name: xenorchestra-config  # Secret created from .env file
+    # Remove or comment out the config-file volume mount
+    # volumeMounts:
+    #   - name: xenorchestra-config
+    #     mountPath: /etc/xenorchestra
+```
 
 Verify that the pods are running:
 
