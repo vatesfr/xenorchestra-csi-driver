@@ -97,7 +97,7 @@ func (c xoClient) AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uu
 	vbdID, err := c.VBD().Create(ctx, &payloads.CreateVBDParams{
 		VM:   vmUUID,
 		VDI:  vdi.ID,
-		Mode: payloads.VBDModeRW, // TODO: change it if "ReadOnly" is required
+		Mode: payloads.VBDModeRW,
 	})
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VBD to attach VDI to the node", "vdi", vdi, "vmUUID", vmUUID)

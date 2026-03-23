@@ -138,8 +138,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 			}
 		}
 		if vbdToAttach != nil {
-			// If we found a VBD for this VM, connect it if needed
-			// The VDI is already added to the VM
+			// The VDI is already added to this VM; connect it if not yet hot-plugged.
 			if !vbdToAttach.Attached {
 				klog.V(5).InfoS("Connecting existing VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
 				vbdConnected, err := driver.xoClient.ConnectVBDToVM(ctx, *vbdToAttach)
@@ -151,12 +150,11 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 				return &csi.ControllerPublishVolumeResponse{
 					PublishContext: publishContextFromVBD(*vbdConnected),
 				}, nil
-			} else {
-				klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
-				return &csi.ControllerPublishVolumeResponse{
-					PublishContext: publishContextFromVBD(*vbdToAttach),
-				}, nil
 			}
+			klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
+			return &csi.ControllerPublishVolumeResponse{
+				PublishContext: publishContextFromVBD(*vbdToAttach),
+			}, nil
 		} else {
 			// Else, it means the VDI is added to a VM (= has VBD) but is not attached (connected) to it
 			// We can continue to attach it to the node
