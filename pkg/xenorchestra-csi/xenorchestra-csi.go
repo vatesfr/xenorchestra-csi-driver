@@ -75,7 +75,11 @@ func NewDriver(options *DriverOptions) Driver {
 	xoConfig, err := LoadXOConfigFromFile(options.ConfigFile)
 	if err != nil {
 		klog.Warningf("Failed to load config from file %s: %v, falling back to environment variables", options.ConfigFile, err)
-		// TODO: Add fallback to env variables
+		// Load XO config from environment variables if file loading fails
+		xoConfig, err = xok8s.LoadXOConfigFromEnv()
+		if err != nil {
+			klog.Fatalf("Failed to load config from environment variables: %v. Please ensure either a valid config file is mounted or the required environment variables (XOA_URL and XOA_TOKEN) are set", err)
+		}
 	}
 	xoClient, err := xok8s.NewXOClient(&xoConfig)
 	if err != nil {
