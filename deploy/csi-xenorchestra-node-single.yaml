@@ -11,6 +11,8 @@ metadata:
     app.kubernetes.io/component: plugin
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: csi-xenorchestra-node-single

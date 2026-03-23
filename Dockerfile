@@ -35,10 +35,15 @@ ARG GIT_COMMIT
 
 WORKDIR /build
 COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
 COPY Makefile ./
 COPY pkg/    pkg/
 COPY cmd/    cmd/
-RUN VERSION="${VERSION}" GIT_COMMIT="${GIT_COMMIT}" make build-all-archs
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    VERSION="${VERSION}" GIT_COMMIT="${GIT_COMMIT}" make build-all-archs
 
 
 ################################################################################
