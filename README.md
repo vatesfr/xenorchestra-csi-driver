@@ -5,6 +5,8 @@ A Container Storage Interface (CSI) driver that provides persistent storage for 
 This repository hosts the CSI driver and all of its build and dependent configuration files to deploy the driver.
 
 It is recommended to install the Xen Orchestra CCM in addition to the CSI driver.
+Without the CCM, topology labels are absent from nodes and Kubernetes cannot enforce
+pool-scoped volume placement (see [Topology and Placement](docs/topology.md)).
 
 * csi plugin name: `csi.xenorchestra.vates.tech`
 * supported accessModes: `ReadWriteOnce`
@@ -27,6 +29,7 @@ It is recommended to install the Xen Orchestra CCM in addition to the CSI driver
 ## Documentation
 
 - [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static provisioning.
+- [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
 
 ## Install driver on a Kubernetes cluster
@@ -96,7 +99,7 @@ Name | Meaning | Example | Required | Default
 - [ ] Access modes - Add ReadWriteMany and ReadOnlyMany support
 
 ### Security & Configuration
-- [ ] Use with Xen Orchestra Cloud Controller Manager
+- [x] Use with Xen Orchestra Cloud Controller Manager
 - [x] Alternative for credential management (environment variables supported)
 - [ ] Check RBAC policies
 

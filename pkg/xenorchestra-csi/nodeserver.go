@@ -56,10 +56,12 @@ func (driver *xenorchestraCSIDriver) NodeGetInfo(ctx context.Context, req *csi.N
 	}
 	return &csi.NodeGetInfoResponse{
 		NodeId: metadata.NodeId,
+		// According to Xen Orchestra documentation, 241 is the maximum number of VDIs that can be attached to a single VM,
+		// but we reserve 2 for the root disk and CD-ROM.
+		MaxVolumesPerNode: 239,
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{
 				xok8s.XOLabelTopologyPoolID: metadata.PoolId,
-				xok8s.XOLabelTopologyHostID: metadata.HostId,
 			},
 		},
 	}, nil

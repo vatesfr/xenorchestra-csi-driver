@@ -86,8 +86,24 @@ func NewDriver(options *DriverOptions) Driver {
 		klog.Fatalf("failed to create Xen Orchestra client: %v", err)
 	}
 
-	// TODO: make it configurable to use the CCM labels or the NodeMetadata (no CCM dependency)
-	nodeMetadataGetter := NewNodeMetadataFromXoClient(kclient, xoClient, options.NodeName)
+	// Select the NodeMetadata implementation based on the configured source.
+	// - NodeMetadataSourceKubernetes (default): reads pool ID from the node label
+	//   topology.k8s.xenorchestra/pool_id set by the XenOrchestra CCM.
+	// - NodeMetadataSourceXoAPI: queries the XenOrchestra API directly at startup;
+	//   use this when the Xen Orchestra CCM is not installed.
+	var nodeMetadataGetter NodeMetadataGetter
+	switch options.NodeMetadataSource {
+	case NodeMetadataSourceXoAPI:
+		klog.Info("Node metadata source: xo-api (CCM not required)")
+		nodeMetadataGetter = NewNodeMetadataFromXoClient(kclient, xoClient, options.NodeName)
+	default:
+		// NodeMetadataSourceKubernetes is the default.
+		if options.NodeMetadataSource != NodeMetadataSourceKubernetes {
+			klog.Warningf("Unknown node-metadata-source %q, falling back to %q", options.NodeMetadataSource, NodeMetadataSourceKubernetes)
+		}
+		klog.Info("Node metadata source: kubernetes (requires the XenOrchestra CCM)")
+		nodeMetadataGetter = NewNodeMetadataFromKubernetes(kclient, options.NodeName)
+	}
 
 	klog.Infof("Driver: %v ", options.DriverName)
 	klog.Infof("Version: %s", driverVersion)

@@ -23,14 +23,28 @@ Network connectivity is required between every Kubernetes node and the Xen Orche
 - `kubectl` configured with access to the target cluster.
 - Sufficient RBAC permissions to create resources in the `kube-system` namespace.
 
-### Optional: XenOrchestra Cloud Controller Manager (CCM)
+### XenOrchestra Cloud Controller Manager (CCM)
 
-The CSI driver reuses the same credentials secret as the CCM.
-If the CCM is already installed in your cluster the secret is already present and you can skip the
-[credentials step](#2-create-the-credentials-secret) below.
+The CCM is **strongly recommended** when using the CSI driver with the default
+`NodeMetadataFromKubernetes` mode. It sets the topology labels
+(e.g. `topology.k8s.xenorchestra/pool_id`) on each Kubernetes Node. The CSI driver
+reads these labels to build the `AccessibleTopology` that Kubernetes uses to
+schedule pods and volumes on the correct pool.
+
+TODO: Check that behavior (pool topology label will be absent on nodes)
+
+**Without the CCM**, the pool topology label will be absent on nodes. Kubernetes
+will not enforce any placement constraints, and volume attachment can fail with a
+`FailedPrecondition` error when the scheduler picks a node in a different pool than
+the one owning the VDI.
+
+The CSI driver reuses the same credentials secret as the CCM. If the CCM is already
+installed you can skip the [credentials step](#2-create-the-credentials-secret)
+below.
 
 See the [CCM install guide](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md)
-for details.
+for setup instructions, and [docs/topology.md](topology.md) for a detailed
+explanation of how topology works in this driver.
 
 ---
 
