@@ -101,7 +101,7 @@ node plugin. The flag is set in the node DaemonSet arguments.
 
 | `--node-metadata-source` | CCM required? | How pool_id is resolved |
 | ------------------------ | ------------- | ----------------------- |
-| `kubernetes` **(default)** | **Yes** | Reads the Xenorchestra topology labels and the `ProviderID` set by the CCM on the Node object. If they are absent the pool ID will be empty and topology is not enforced. |
+| `kubernetes` **(default)** | **Yes** | Reads the `ProviderID` set by the CCM on the Node object. If it is absent, `NodeGetInfo` fails and the node plugin cannot register with kubelet. |
 | `xo-api` | No | Queries the XenOrchestra API directly at startup to resolve the pool ID and VM UUID from the node name. |
 
 #### Choosing the right mode
@@ -111,14 +111,25 @@ node plugin. The flag is set in the node DaemonSet arguments.
 --node-metadata-source=xo-api       # use this when CCM is not installed
 ```
 
-When using **`NodeMetadataFromKubernetes`** without the CCM, two things happen:
+When using **`NodeMetadataFromKubernetes`** without the CCM, `spec.providerID` on the
+Node object is empty. `GetNodeMetadata()` calls `ParseProviderID("")`, which returns
+an error. `NodeGetInfo` propagates it as a `codes.Internal` gRPC error:
 
-TODO: Check this behavior 
+```
+failed to fetch node metadata: failed to parse provider ID:
+has the Xen Orchestra CCM been installed? (foreign providerID or empty "")
+```
 
-1. The `pool_id` topology segment is empty.
-2. Kubernetes imposes no topology constraints: pods can be scheduled on any node and
-   volumes can be attached across pool boundaries — which XenOrchestra will reject,
-   causing `ControllerPublishVolume` to fail with `FailedPrecondition`.
+The node-driver-registrar (NDR) receives this error via `NotifyRegistrationStatus`
+and immediately restarts, entering a **CrashLoopBackOff**. Consequences:
+
+1. **The CSI node plugin is never registered with kubelet** on that node.
+2. **No `topology.k8s.xenorchestra/pool_id` label is ever written** to the Node object.
+3. **No volume can be staged, published, or unpublished** on that node — the kubelet
+   has no registered driver to call.
+
+This is more severe than unenforced topology: the entire node plugin is non-functional
+until a CCM populates `spec.providerID`.
 
 **Running the CCM alongside the CSI driver is therefore strongly recommended.**
 It ensures that the pool topology is always present on Kubernetes nodes,

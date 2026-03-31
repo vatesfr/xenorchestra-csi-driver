@@ -54,7 +54,7 @@ func (n *NodeMetadataFromKubernetes) GetNodeMetadata() (*NodeMetadata, error) {
 
 	vm, poolId, err := xok8s.ParseProviderID(node.Spec.ProviderID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse provider ID: %w", err)
+		return nil, fmt.Errorf("failed to parse provider ID: has the Xen Orchestra CCM been installed? (%w)", err)
 	}
 
 	return &NodeMetadata{

@@ -99,7 +99,7 @@ func NewDriver(options *DriverOptions) Driver {
 	default:
 		// NodeMetadataSourceKubernetes is the default.
 		if options.NodeMetadataSource != NodeMetadataSourceKubernetes {
-			klog.Warningf("Unknown node-metadata-source %q, falling back to %q", options.NodeMetadataSource, NodeMetadataSourceKubernetes)
+			klog.Fatalf("Unknown node-metadata-source %q", options.NodeMetadataSource)
 		}
 		klog.Info("Node metadata source: kubernetes (requires the XenOrchestra CCM)")
 		nodeMetadataGetter = NewNodeMetadataFromKubernetes(kclient, options.NodeName)
