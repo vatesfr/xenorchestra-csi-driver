@@ -8,7 +8,7 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/vatesfr/xenorchestra-go-sdk v1.13.0
 	github.com/vatesfr/xenorchestra-k8s-common v0.2.0
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.2
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
 	k8s.io/klog/v2 v2.130.1
