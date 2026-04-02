@@ -82,6 +82,10 @@ spec:
             - "--endpoint=unix:///csi/csi.sock"
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
+            # node-metadata-source controls how the pool ID and VM identity are resolved.
+            # kubernetes (default): reads from node labels set by the XenOrchestra CCM.
+            # xo-api: queries the XenOrchestra API directly; use when CCM is not installed.
+            - "--node-metadata-source=kubernetes"
           ports:
             - containerPort: 29603
               name: healthz

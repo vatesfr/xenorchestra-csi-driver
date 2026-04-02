@@ -23,14 +23,31 @@ Network connectivity is required between every Kubernetes node and the Xen Orche
 - `kubectl` configured with access to the target cluster.
 - Sufficient RBAC permissions to create resources in the `kube-system` namespace.
 
-### Optional: XenOrchestra Cloud Controller Manager (CCM)
+### XenOrchestra Cloud Controller Manager (CCM)
 
-The CSI driver reuses the same credentials secret as the CCM.
-If the CCM is already installed in your cluster the secret is already present and you can skip the
-[credentials step](#2-create-the-credentials-secret) below.
+The CCM is **required** when using the CSI driver with the default
+`--node-metadata-source=kubernetes` mode. The CCM sets `spec.providerID` on each
+Kubernetes Node object. The CSI node plugin reads this field at startup to resolve
+the pool ID and VM UUID, then returns them from `NodeGetInfo` so that kubelet can
+register the driver and write the `topology.k8s.xenorchestra/pool_id` label.
+
+**Without the CCM**, `spec.providerID` is empty. `NodeGetInfo` fails with a
+`codes.Internal` error and the node-driver-registrar enters **CrashLoopBackOff**.
+The CSI node plugin is never registered with kubelet on that node: no volume can be
+staged, published, or unpublished. The `topology.k8s.xenorchestra/pool_id` label is
+never written to the Node object.
+
+If you cannot run the CCM, use `--node-metadata-source=xo-api` instead — the driver
+will resolve the pool ID directly from the XenOrchestra API without depending on
+`spec.providerID`.
+
+The CSI driver reuses the same credentials secret as the CCM. If the CCM is already
+installed you can skip the [credentials step](#2-create-the-credentials-secret)
+below.
 
 See the [CCM install guide](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md)
-for details.
+for setup instructions, and [docs/topology.md](topology.md) for a detailed
+explanation of how topology works in this driver.
 
 ---
 

@@ -17,8 +17,6 @@ package xenorchestracsi
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
@@ -32,7 +30,6 @@ type NodeMetadataGetter interface {
 
 type NodeMetadata struct {
 	NodeId string
-	HostId string
 	PoolId string
 }
 
@@ -48,44 +45,22 @@ func NewNodeMetadataFromKubernetes(client kclient.Interface, nodeName string) *N
 	}
 }
 
-// TODO: rework this part to use only CCM labels and not rely on DMI product UUID
+// GetNodeMetadata retrieves node identity and topology metadata from Kubernetes.
 func (n *NodeMetadataFromKubernetes) GetNodeMetadata() (*NodeMetadata, error) {
-	nodeId, err := getNodeIdFromDmiProductUUID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get node id: %w", err)
-	}
-
 	node, err := n.client.CoreV1().Nodes().Get(context.Background(), n.nodeName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	hostId := node.Labels[xok8s.XOLabelTopologyHostID]
-	poolId := node.Labels[xok8s.XOLabelTopologyPoolID]
+	vm, poolId, err := xok8s.ParseProviderID(node.Spec.ProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse provider ID: has the Xen Orchestra CCM been installed? (%w)", err)
+	}
 
 	return &NodeMetadata{
-		NodeId: nodeId,
-		HostId: hostId,
-		PoolId: poolId,
+		NodeId: vm.ID.String(),
+		PoolId: poolId.String(),
 	}, nil
-}
-
-// This should give us the VM UUID as reported in Xen Orchestra
-// We are using `/sys/class/dmi/id/product_uuid`. However, I am not sure if there are more reliable ways to get the VM UUID.
-// Another option is to use `xenstore-ls`
-// There is also `/sys/hypervisor/uuid` but it's not clear if that's the same as the VM UUID
-func getNodeIdFromDmiProductUUID() (string, error) {
-	productUUID, err := os.ReadFile("/sys/class/dmi/id/product_uuid")
-	if err != nil {
-		return "", fmt.Errorf("failed to read product UUID: %w", err)
-	}
-
-	uuid := strings.TrimSpace(string(productUUID))
-	if uuid == "" {
-		return "", fmt.Errorf("failed to get product UUID: product UUID is empty")
-	}
-
-	return uuid, nil
 }
 
 // NodeMetadataFromXoClient uses the XoClient to get all needed metadata.
@@ -103,6 +78,9 @@ func NewNodeMetadataFromXoClient(kubeClient kclient.Interface, xoClient *xok8s.X
 	}
 }
 
+// GetNodeMetadata retrieves node identity and topology metadata directly from
+// the XenOrchestra API. This implementation does not depend on the CCM having
+// labeled the node beforehand; it resolves the pool ID by querying XO at startup.
 func (n *NodeMetadataFromXoClient) GetNodeMetadata() (*NodeMetadata, error) {
 	node, err := n.kclient.CoreV1().Nodes().Get(context.Background(), n.nodeName, metav1.GetOptions{})
 	if err != nil {
@@ -112,9 +90,9 @@ func (n *NodeMetadataFromXoClient) GetNodeMetadata() (*NodeMetadata, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to find VM by node: %w", err)
 	}
+
 	return &NodeMetadata{
 		NodeId: vm.ID.String(),
-		HostId: vm.Container.String(),
 		PoolId: poolID.String(),
 	}, nil
 }
