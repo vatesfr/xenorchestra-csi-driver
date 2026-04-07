@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 
 	"k8s.io/klog/v2"
@@ -194,7 +195,7 @@ func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Conte
 	err = driver.xoClient.DisconnectVBDFromVM(ctx, payloads.VDI{ID: volumeId}, vmUUID)
 	if err != nil {
 		// Ignore not found errors as the VBD may have already been detached
-		if !errors.Is(err, ErrVBDNotFound) {
+		if !errors.Is(err, clients.ErrVBDNotFound) {
 			klog.ErrorS(err, "Failed to detach VDI from VM", "vdiID", volumeId, "vmUUID", vmUUID)
 			return nil, status.Errorf(codes.Internal, "Failed to detach VDI from VM: %v", err)
 		}

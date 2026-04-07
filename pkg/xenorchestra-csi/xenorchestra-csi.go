@@ -20,6 +20,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	kube "k8s.io/client-go/kubernetes"
@@ -43,9 +44,9 @@ type xenorchestraCSIDriver struct {
 	csi.UnimplementedControllerServer
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
-	nodeMetadata NodeMetadataGetter
-	xoClient     XoClient
-	mounter      Mounter
+	nodeMetadata clients.NodeMetadataGetter
+	xoClient     clients.XoClient
+	mounter      clients.Mounter
 }
 
 func NewDriver(options *DriverOptions) Driver {
@@ -91,18 +92,18 @@ func NewDriver(options *DriverOptions) Driver {
 	//   topology.k8s.xenorchestra/pool_id set by the XenOrchestra CCM.
 	// - NodeMetadataSourceXoAPI: queries the XenOrchestra API directly at startup;
 	//   use this when the Xen Orchestra CCM is not installed.
-	var nodeMetadataGetter NodeMetadataGetter
+	var nodeMetadataGetter clients.NodeMetadataGetter
 	switch options.NodeMetadataSource {
 	case NodeMetadataSourceXoAPI:
 		klog.Info("Node metadata source: xo-api (CCM not required)")
-		nodeMetadataGetter = NewNodeMetadataFromXoClient(kclient, xoClient, options.NodeName)
+		nodeMetadataGetter = clients.NewNodeMetadataFromXoClient(kclient, xoClient, options.NodeName)
 	default:
 		// NodeMetadataSourceKubernetes is the default.
 		if options.NodeMetadataSource != NodeMetadataSourceKubernetes {
 			klog.Fatalf("Unknown node-metadata-source %q", options.NodeMetadataSource)
 		}
 		klog.Info("Node metadata source: kubernetes (requires the XenOrchestra CCM)")
-		nodeMetadataGetter = NewNodeMetadataFromKubernetes(kclient, options.NodeName)
+		nodeMetadataGetter = clients.NewNodeMetadataFromKubernetes(kclient, options.NodeName)
 	}
 
 	klog.Infof("Driver: %v ", options.DriverName)
@@ -113,8 +114,8 @@ func NewDriver(options *DriverOptions) Driver {
 		Version:      driverVersion,
 		endpoint:     options.Endpoint,
 		nodeMetadata: nodeMetadataGetter,
-		xoClient:     NewXoClient(xoClient.Client),
-		mounter:      NewSafeMounter(),
+		xoClient:     clients.NewXoClient(xoClient.Client),
+		mounter:      clients.NewSafeMounter(),
 	}
 }
 
