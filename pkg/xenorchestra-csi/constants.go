@@ -17,4 +17,9 @@ package xenorchestracsi
 
 const (
 	DriverName = "csi.xenorchestra.vates.tech"
+
+	// ParameterPoolID is the mandatory StorageClass parameter that identifies
+	// the Xen Orchestra pool to provision the VDI in. The driver uses the
+	// pool's DefaultSR as the target storage repository.
+	ParameterPoolID = "poolId"
 )

@@ -22,6 +22,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 ## Features
 
 - Static volume provisioning (use an existing VDI by UUID).
+- Dynamic volume provisioning (automatically create a VDI from a StorageClass).
 
 ## Prerequisite
 
@@ -31,7 +32,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 ## Documentation
 
-- [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static provisioning.
+- [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static and dynamic provisioning.
 - [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
 
@@ -74,7 +75,7 @@ Use `/var/lib/kubelet/`
 
 ### Static provisioning
 
-Manually attach a disk to the node VM. 
+Manually attach a disk to the node VM.
 > [Get an example](./examples/pv-volume.yaml)
 
 1. Create a VDI using the Xen Orchestra GUI, or any other tools such as CLI, API or Terraform.
@@ -86,11 +87,35 @@ Name | Meaning | Example | Required | Default
 `volumeHandle` | Disk identifier, it must be the VDI UUID | `b05f63f2-692a-4833-9453-980a73f9f27f` | Yes | N/A
 `driver` | Driver to use for the PV | it must be `csi.xenorchestra.vates.tech` | Yes | N/A
 
+### Dynamic provisioning
+
+Set `poolId` in the `StorageClass.parameters` block. The driver creates a new VDI
+in the pool's **default SR** each time a PVC is bound.
+> [Get an example](./examples/csi-sc-dynamic.yaml)
+
+Name | Meaning | Example | Required | Default
+--- | --- | --- | --- | ---
+`poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | **Yes** | N/A
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-dynamic
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  poolId: "<xo-pool-uuid>"
+```
+
 
 ## 🚀 TODO / Roadmap
 
 ### Core CSI Operations
-- [ ] Dynamic Volume Provisioning (Create / Delete VDIs)
+- [x] Dynamic Volume Provisioning (Create VDIs from a StorageClass)
+- [x] Delete VDIs when a PV is released (`reclaimPolicy: Delete`)
 - [ ] Read only full-support
 - [ ] Volume Expansion
 - [ ] Volume Snapshots
@@ -120,6 +145,8 @@ Name | Meaning | Example | Required | Default
 - [ ] Unit test and integration tests
 
 ### XO related
+- [x] Pool selection via `StorageClass.parameters.poolId`
+- [ ] Implement `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — required to legally return `AccessibleTopology` in `CreateVolumeResponse` and to receive topology requirements in `CreateVolumeRequest`
 - [ ] Cluster Topology support
 - [ ] Multi-SR support (migration...)
 - [ ] Multi-pool support

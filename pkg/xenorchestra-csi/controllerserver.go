@@ -18,6 +18,7 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/gofrs/uuid"
@@ -37,17 +38,17 @@ func (driver *xenorchestraCSIDriver) ControllerExpandVolume(context.Context, *cs
 
 // ControllerGetCapabilities implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
-	klog.V(5).InfoS("ControllerGetCapabilities called", "request", req)
+	klog.V(5).Infof("ControllerGetCapabilities called, request: %v", req)
 
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: []*csi.ControllerServiceCapability{
-			// {
-			// 	Type: &csi.ControllerServiceCapability_Rpc{
-			// 		Rpc: &csi.ControllerServiceCapability_RPC{
-			// 			Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-			// 		},
-			// 	},
-			// },
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+					},
+				},
+			},
 			{
 				Type: &csi.ControllerServiceCapability_Rpc{
 					Rpc: &csi.ControllerServiceCapability_RPC{
@@ -87,7 +88,7 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(context.Context, *cs
 
 // ControllerPublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	klog.V(5).InfoS("ControllerPublishVolume called", "request", req)
+	klog.V(5).Infof("ControllerPublishVolume called, request: %v", req)
 
 	vmUUID, err := uuid.FromString(req.GetNodeId())
 	if err != nil || vmUUID == uuid.Nil {
@@ -178,7 +179,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 
 // ControllerUnpublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	klog.V(5).InfoS("ControllerUnpublishVolume called", "request", req)
+	klog.V(5).Infof("ControllerUnpublishVolume called, request: %v", req)
 
 	vmUUID, err := uuid.FromString(req.GetNodeId())
 	if err != nil || vmUUID == uuid.Nil {
@@ -212,9 +213,92 @@ func (driver *xenorchestraCSIDriver) CreateSnapshot(context.Context, *csi.Create
 }
 
 // CreateVolume implements Driver.
-func (driver *xenorchestraCSIDriver) CreateVolume(context.Context, *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	klog.Error("CreateVolume is not implemented")
-	return nil, status.Error(codes.Unimplemented, "CreateVolume is not implemented")
+func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+	klog.V(5).Infof("CreateVolume called, request: %v", req)
+	// (
+	// 	req=name:"pvc-b6ffb29f-633d-448e-b444-1a1a3faf6f4b"
+	// 	capacity_range:{required_bytes:1073741824}
+	// 	volume_capabilities:{mount:{fs_type:"ext4"}
+	// 	access_mode:{mode:SINGLE_NODE_WRITER}}
+	// )
+
+	volumeName := req.GetName()
+	if volumeName == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "disk name is required")
+	}
+
+	if req.VolumeContentSource != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "volume content source is not supported")
+	}
+
+	capabilities := req.GetVolumeCapabilities()
+	if len(capabilities) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "volume capabilities are required")
+	}
+
+	if !isValidVolumeCapabilities(capabilities) {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capabilities")
+	}
+
+	var capacityBytes int64
+	if req.GetCapacityRange() != nil {
+		capacityBytes = req.GetCapacityRange().GetRequiredBytes()
+		if capacityBytes <= 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "capacity must be greater than 0")
+		}
+	}
+
+	diskName := "csi-" + volumeName // TODO: add prefix/suffix to ensure uniqueness and avoid conflicts with existing disks
+	klog.V(5).InfoS("Creating volume", "diskName", diskName, "capacityBytes", capacityBytes)
+
+	// Resolve pool from StorageClass parameters.
+	params := req.GetParameters()
+	poolIDStr, ok := params[ParameterPoolID]
+	if !ok || poolIDStr == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "parameter %q is required", ParameterPoolID)
+	}
+	poolUUID, err := uuid.FromString(poolIDStr)
+	if err != nil || poolUUID == uuid.Nil {
+		return nil, status.Errorf(codes.InvalidArgument, "parameter %q must be a valid UUID, got %q", ParameterPoolID, poolIDStr)
+	}
+
+	pool, err := driver.xoClient.Pool().Get(ctx, poolUUID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to get pool", "poolID", poolIDStr)
+		return nil, status.Errorf(codes.NotFound, "pool %q not found or inaccessible: %v", poolIDStr, err)
+	}
+	if pool.DefaultSR == uuid.Nil {
+		klog.ErrorS(nil, "Pool has no default SR configured", "poolID", poolIDStr)
+		return nil, status.Errorf(codes.FailedPrecondition, "pool %q has no default SR configured", poolIDStr)
+	}
+	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
+
+	vdiID, err := driver.xoClient.VDI().Create(ctx, payloads.VDICreateParams{
+		SRId:            pool.DefaultSR,
+		NameLabel:       diskName,
+		VirtualSize:     capacityBytes,
+		NameDescription: "VDI managed by the Kubernetes CSI",
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to create VDI", "diskName", diskName, "capacityBytes", capacityBytes)
+		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
+	}
+	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "diskName", diskName, "capacityBytes", capacityBytes)
+
+	return &csi.CreateVolumeResponse{
+		Volume: &csi.Volume{
+			VolumeId:      vdiID.String(),
+			CapacityBytes: capacityBytes,
+			AccessibleTopology: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						"pool": pool.ID.String(),
+						"sr":   pool.DefaultSR.String(),
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 // DeleteSnapshot implements Driver.
@@ -224,9 +308,50 @@ func (driver *xenorchestraCSIDriver) DeleteSnapshot(context.Context, *csi.Delete
 }
 
 // DeleteVolume implements Driver.
-func (driver *xenorchestraCSIDriver) DeleteVolume(context.Context, *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	klog.Error("DeleteVolume is not implemented")
-	return nil, status.Error(codes.Unimplemented, "DeleteVolume is not implemented")
+func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	klog.V(5).Infof("DeleteVolume called, request: %v", req)
+
+	volumeID, err := uuid.FromString(req.GetVolumeId())
+	if err != nil || volumeID == uuid.Nil {
+		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required and must be a valid UUID")
+	}
+
+	// Check whether the VDI still exists. Return success immediately if it is already gone
+	_, err = driver.xoClient.VDI().Get(ctx, volumeID)
+	if err != nil {
+		if isNotFoundError(err) {
+			klog.V(5).InfoS("VDI not found, treating as already deleted", "volumeID", volumeID)
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to get VDI %s: %v", volumeID, err)
+	}
+
+	// Refuse to delete a VDI that is still attached to a VM.
+	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, &payloads.VDI{ID: volumeID})
+	if err != nil {
+		klog.ErrorS(err, "Failed to check VDI attachments", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to check VDI attachments for %s: %v", volumeID, err)
+	}
+	for _, vbd := range vbds {
+		if vbd.Attached {
+			klog.ErrorS(nil, "VDI still attached to a VM, refusing deletion", "volumeID", volumeID, "vmID", vbd.VM)
+			return nil, status.Errorf(codes.FailedPrecondition, "volume %s is still attached to VM %s", volumeID, vbd.VM)
+		}
+	}
+
+	if err := driver.xoClient.VDI().Delete(ctx, volumeID); err != nil {
+		if isNotFoundError(err) {
+			// Deleted by a concurrent call between our Get and Delete
+			klog.V(5).InfoS("VDI already deleted by concurrent call", "volumeID", volumeID)
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		klog.ErrorS(err, "Failed to delete VDI", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to delete VDI %s: %v", volumeID, err)
+	}
+
+	klog.V(5).InfoS("VDI deleted successfully", "volumeID", volumeID)
+	return &csi.DeleteVolumeResponse{}, nil
 }
 
 // GetCapacity implements Driver.
@@ -258,4 +383,11 @@ func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 		"device": *vbd.Device,
 		"vbd":    vbd.ID.String(),
 	}
+}
+
+// isNotFoundError reports whether err is an HTTP 404 from the Xen Orchestra REST
+// API. The SDK does not expose a dedicated sentinel; errors follow the pattern
+// "API error: 404 Not Found - <body>".
+func isNotFoundError(err error) bool {
+	return strings.Contains(err.Error(), "404")
 }

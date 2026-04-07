@@ -52,6 +52,9 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 		return nil
 	}
 	fs := flag.NewFlagSet("", flag.ExitOnError)
+	// Set default before registering the flag so the field is populated even if
+	// the flag is never passed on the command line.
+	o.NodeMetadataSource = NodeMetadataSourceKubernetes
 	fs.StringVar(&o.NodeName, "node-name", "", "Node name")
 	fs.StringVar(&o.DriverName, "driver-name", DriverName, "Driver name")
 	fs.StringVar(&o.Endpoint, "endpoint", "unix://tmp/csi.sock", "CSI endpoint")
