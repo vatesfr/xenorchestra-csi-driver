@@ -248,7 +248,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}
 	}
 
-	diskName := "csi-" + volumeName // TODO: add prefix/suffix to ensure uniqueness and avoid conflicts with existing disks
+	diskName := driver.vdiNamePrefix + volumeName
 	klog.V(5).InfoS("Creating volume", "diskName", diskName, "capacityBytes", capacityBytes)
 
 	// Resolve pool from StorageClass parameters.

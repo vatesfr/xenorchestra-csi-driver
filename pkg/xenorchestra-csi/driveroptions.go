@@ -45,6 +45,9 @@ type DriverOptions struct {
 	ConfigFile string
 	// NodeMetadataSource selects how the node plugin resolves pool ID and VM identity.
 	NodeMetadataSource NodeMetadataSource
+	// VDINamePrefix is prepended to the Kubernetes volume name when constructing
+	// the VDI name label in Xen Orchestra. Defaults to DefaultVDINamePrefix ("csi-").
+	VDINamePrefix string
 }
 
 func (o *DriverOptions) AddFlags() *flag.FlagSet {
@@ -55,10 +58,13 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 	// Set default before registering the flag so the field is populated even if
 	// the flag is never passed on the command line.
 	o.NodeMetadataSource = NodeMetadataSourceKubernetes
+	o.VDINamePrefix = DefaultVDINamePrefix
 	fs.StringVar(&o.NodeName, "node-name", "", "Node name")
 	fs.StringVar(&o.DriverName, "driver-name", DriverName, "Driver name")
 	fs.StringVar(&o.Endpoint, "endpoint", "unix://tmp/csi.sock", "CSI endpoint")
 	fs.StringVar(&o.ConfigFile, "config-file", "/etc/xenorchestra/config.yaml", "Path to XO configuration file")
+	fs.StringVar(&o.VDINamePrefix, "vdi-name-prefix", DefaultVDINamePrefix,
+		"Prefix prepended to the Kubernetes volume name when naming VDIs in Xen Orchestra (default: \"csi-\")")
 	fs.Func("node-metadata-source",
 		`Source used by the node plugin to resolve pool ID and VM identity.
 Allowed values:

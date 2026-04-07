@@ -22,4 +22,9 @@ const (
 	// the Xen Orchestra pool to provision the VDI in. The driver uses the
 	// pool's DefaultSR as the target storage repository.
 	ParameterPoolID = "poolId"
+
+	// DefaultVDINamePrefix is prepended to the Kubernetes volume name when
+	// constructing the VDI name label in Xen Orchestra. Override it at
+	// driver startup with the --vdi-name-prefix flag.
+	DefaultVDINamePrefix = "csi-"
 )
