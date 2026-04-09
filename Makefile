@@ -90,7 +90,6 @@ release-update:
 unit: ## Unit Tests
 	go test -tags=unit $(shell go list ./...) $(TESTARGS)
 
-
 .PHONY: run
 run: ## Run the application
 	go run ./cmd/${PLUGIN_NAME} --v 5 --node-name $(KUBE_NODE_NAME) --endpoint=unix:///csi/csi.sock
