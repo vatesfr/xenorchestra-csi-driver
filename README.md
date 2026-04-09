@@ -23,6 +23,8 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 - Static volume provisioning (use an existing VDI by UUID).
 - Dynamic volume provisioning (automatically create a VDI from a StorageClass).
+- Volume health monitoring (SR condition reported via `ListVolumes` / `ControllerGetVolume`).
+- Cluster tag filtering (`--cluster-tag` flag; only tagged VDIs appear in `ListVolumes`).
 
 ## Prerequisite
 
@@ -121,7 +123,7 @@ parameters:
 - [ ] Volume Snapshots
 
 ### Storage Management
-- [ ] Volume Listing
+- [x] Volume Listing (`ListVolumes` with cluster tag filter)
 - [ ] Storage Capacity
 - [ ] Volume Validation, Information, Modification
 - [ ] Access modes - Add ReadWriteMany and ReadOnlyMany support
@@ -132,6 +134,7 @@ parameters:
 - [ ] Check RBAC policies
 
 ### Performance & Monitoring
+- [x] Volume health monitoring (`VOLUME_CONDITION` via `ListVolumes` / `ControllerGetVolume`)
 - [ ] Metrics endpoint
 - [ ] Switch completely to the Xen Orchestra REST API
 
@@ -146,6 +149,7 @@ parameters:
 
 ### XO related
 - [x] Pool selection via `StorageClass.parameters.poolId`
+- [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation, `ListVolumes` filters by tag)
 - [ ] Implement `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — required to legally return `AccessibleTopology` in `CreateVolumeResponse` and to receive topology requirements in `CreateVolumeRequest`
 - [ ] Cluster Topology support
 - [ ] Multi-SR support (migration...)

@@ -18,6 +18,9 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -26,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	"k8s.io/klog/v2"
 )
@@ -70,14 +74,151 @@ func (driver *xenorchestraCSIDriver) ControllerGetCapabilities(ctx context.Conte
 					},
 				},
 			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_VOLUME_CONDITION,
+					},
+				},
+			},
 		},
 	}, nil
 }
 
 // ControllerGetVolume implements Driver.
-func (driver *xenorchestraCSIDriver) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	klog.Error("ControllerGetVolume is not implemented")
-	return nil, status.Error(codes.Unimplemented, "ControllerGetVolume is not implemented")
+func (driver *xenorchestraCSIDriver) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	klog.V(5).Infof("ControllerGetVolume called, request: %v", req)
+
+	volumeID, err := uuid.FromString(req.GetVolumeId())
+	if err != nil || volumeID == uuid.Nil {
+		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required and must be a valid UUID")
+	}
+
+	vdi, err := driver.xoClient.VDI().Get(ctx, volumeID)
+	if err != nil {
+		if isNotFoundError(err) {
+			// Per KEP-1432: return a condition instead of a gRPC NOT_FOUND error so
+			// that the health monitor can surface the event on the PVC.
+			return &csi.ControllerGetVolumeResponse{
+				Volume: &csi.Volume{
+					VolumeId:      volumeID.String(),
+					CapacityBytes: 0,
+				},
+				Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+					VolumeCondition: &csi.VolumeCondition{
+						Abnormal: true,
+						Message:  "VolumeNotFound - the volume is deleted from backend",
+					},
+				},
+			}, nil
+		}
+		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to get VDI %s: %v", volumeID, err)
+	}
+
+	// A VDI with Missing=true has been removed from the storage backend outside
+	// of Kubernetes. Per KEP-1432 "VolumeNotFound" use case, report as abnormal.
+	if vdi.Missing {
+		return &csi.ControllerGetVolumeResponse{
+			Volume: &csi.Volume{
+				VolumeId:      vdi.ID.String(),
+				CapacityBytes: vdi.Size,
+			},
+			Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+				VolumeCondition: &csi.VolumeCondition{
+					Abnormal: true,
+					Message:  "VolumeNotFound - the volume is deleted from backend",
+				},
+			},
+		}, nil
+	}
+
+	// Determine volume condition from SR health.
+	var condition *csi.VolumeCondition
+	sr, srErr := driver.xoClient.SR().Get(ctx, vdi.SR)
+	if srErr != nil {
+		if isNotFoundError(srErr) {
+			condition = volumeConditionFromSR(nil, vdi.SR)
+		} else {
+			klog.ErrorS(srErr, "Failed to get SR for volume condition", "srID", vdi.SR, "volumeID", volumeID)
+			return nil, status.Errorf(codes.Internal, "failed to get SR %s: %v", vdi.SR, srErr)
+		}
+	} else {
+		condition = volumeConditionFromSR(sr, vdi.SR)
+	}
+
+	// Fetch published node IDs — "attached?" server-side filter returns only hot-plugged VBDs.
+	vbds, err := driver.xoClient.VBD().GetAll(ctx, 0, fmt.Sprintf("VDI:%s attached?", vdi.ID))
+	if err != nil {
+		klog.ErrorS(err, "Failed to get VBDs for volume", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to get VBDs for VDI %s: %v", volumeID, err)
+	}
+
+	publishedNodeIDs := make([]string, 0, len(vbds))
+	for _, vbd := range vbds {
+		publishedNodeIDs = append(publishedNodeIDs, vbd.VM.String())
+	}
+
+	// Check PBD connectivity only when the SR-level condition is healthy and there are published nodes.
+	// For each published VM, resolve the host it runs on, then verify the SR has an attached PBD on that host.
+	if condition != nil && !condition.Abnormal && len(vbds) > 0 {
+		publishedHosts := make([]uuid.UUID, 0, len(vbds))
+		hostMap := make(map[uuid.UUID]*payloads.Host, len(vbds))
+		for _, vbd := range vbds {
+			vm, vmErr := driver.xoClient.VM().GetByID(ctx, vbd.VM)
+			if vmErr != nil {
+				klog.ErrorS(vmErr, "Failed to get VM for PBD check", "vmID", vbd.VM, "volumeID", volumeID)
+				return nil, status.Errorf(codes.Internal, "failed to get VM %s for PBD check: %v", vbd.VM, vmErr)
+			}
+			publishedHosts = append(publishedHosts, vm.Container)
+			if vm.Container != uuid.Nil {
+				if _, exists := hostMap[vm.Container]; !exists {
+					host, hostErr := driver.xoClient.Host().Get(ctx, vm.Container)
+					if hostErr != nil {
+						klog.ErrorS(hostErr, "Failed to get host for PBD check", "hostID", vm.Container, "volumeID", volumeID)
+						return nil, status.Errorf(codes.Internal, "failed to get host %s for PBD check: %v", vm.Container, hostErr)
+					}
+					hostMap[vm.Container] = host
+				}
+			}
+		}
+
+		pbds, pbdErr := driver.xoClient.PBD().GetAll(ctx, 0, fmt.Sprintf("SR:%s", vdi.SR))
+		if pbdErr != nil {
+			klog.ErrorS(pbdErr, "Failed to get PBDs for SR", "srID", vdi.SR, "volumeID", volumeID)
+			return nil, status.Errorf(codes.Internal, "failed to get PBDs for SR %s: %v", vdi.SR, pbdErr)
+		}
+
+		if pbdCond := volumeConditionFromPBDs(sr, publishedHosts, pbds, hostMap); pbdCond != nil {
+			condition = pbdCond
+		}
+	}
+
+	return &csi.ControllerGetVolumeResponse{
+		Volume: &csi.Volume{
+			VolumeId:      vdi.ID.String(),
+			CapacityBytes: vdi.Size,
+			// TODO: add accessible topology segment for the pool or SR to allow topology-aware scheduling
+		},
+		Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+			PublishedNodeIds: publishedNodeIDs,
+			VolumeCondition:  condition,
+		},
+	}, nil
 }
 
 // ControllerModifyVolume implements Driver.
@@ -108,6 +249,17 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	vdi, err := driver.xoClient.VDI().Get(ctx, volumeId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get VDI: %v", err)
+	}
+
+	// Adopt the VDI into this cluster's tag set if the tag is not already present.
+	// This ensures static (pre-existing) VDIs are visible in ListVolumes and the
+	// health monitor after their first publish, without requiring manual re-tagging.
+	if driver.clusterTag != "" && !slices.Contains(vdi.Tags, driver.clusterTag) {
+		if err := driver.xoClient.VDI().AddTag(ctx, vdi.ID, driver.clusterTag); err != nil {
+			klog.ErrorS(err, "Failed to add cluster tag to VDI", "vdiID", vdi.ID, "tag", driver.clusterTag)
+			return nil, status.Errorf(codes.Internal, "failed to add cluster tag to VDI %s: %v", vdi.ID, err)
+		}
+		klog.V(4).InfoS("Added cluster tag to VDI", "vdiID", vdi.ID, "tag", driver.clusterTag)
 	}
 
 	// Get Node/VM
@@ -273,12 +425,16 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	}
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
 
-	vdiID, err := driver.xoClient.VDI().Create(ctx, payloads.VDICreateParams{
+	vdiParams := payloads.VDICreateParams{
 		SRId:            pool.DefaultSR,
 		NameLabel:       diskName,
 		VirtualSize:     capacityBytes,
 		NameDescription: "VDI managed by the Kubernetes CSI",
-	})
+	}
+	if driver.clusterTag != "" {
+		vdiParams.Tags = []string{driver.clusterTag}
+	}
+	vdiID, err := driver.xoClient.VDI().Create(ctx, vdiParams)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "diskName", diskName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
@@ -292,8 +448,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
-						"pool": pool.ID.String(),
-						"sr":   pool.DefaultSR.String(),
+						xok8s.XOLabelTopologyPoolID: pool.ID.String(),
 					},
 				},
 			},
@@ -367,9 +522,155 @@ func (driver *xenorchestraCSIDriver) ListSnapshots(context.Context, *csi.ListSna
 }
 
 // ListVolumes implements Driver.
-func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	klog.Error("ListVolumes is not implemented")
-	return nil, status.Error(codes.Unimplemented, "ListVolumes is not implemented")
+func (driver *xenorchestraCSIDriver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+	klog.V(5).Infof("ListVolumes called, request: %v", req)
+
+	// Parse and validate the starting token (integer offset into the full VDI list).
+	startIndex := 0
+	if tok := req.GetStartingToken(); tok != "" {
+		idx, err := strconv.Atoi(tok)
+		if err != nil || idx < 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid starting_token %q: must be a non-negative integer", tok)
+		}
+		startIndex = idx
+	}
+
+	// Fetch all VDIs.
+	allVDIs, err := driver.xoClient.VDI().GetAll(ctx, 0, "")
+	if err != nil {
+		klog.ErrorS(err, "Failed to list VDIs")
+		return nil, status.Errorf(codes.Internal, "failed to list VDIs: %v", err)
+	}
+
+	// Filter client-side: only include VDIs that carry the cluster tag so that
+	// non-Kubernetes VDIs are invisible to the health monitor and volume listings.
+	// When clusterTag is "" the filter is disabled (backward-compatible behavior).
+	if driver.clusterTag != "" {
+		managed := make([]*payloads.VDI, 0, len(allVDIs))
+		for _, v := range allVDIs {
+			if slices.Contains(v.Tags, driver.clusterTag) {
+				managed = append(managed, v)
+			}
+		}
+		allVDIs = managed
+	}
+
+	total := len(allVDIs)
+	if startIndex > total {
+		startIndex = total
+	}
+
+	// Apply MaxEntries pagination.
+	maxEntries := int(req.GetMaxEntries())
+	end := total
+	if maxEntries > 0 && startIndex+maxEntries < total {
+		end = startIndex + maxEntries
+	}
+
+	page := allVDIs[startIndex:end]
+
+	// Fetch all SRs, PBDs and Hosts for volume condition reporting (only when there is at least one VDI to report).
+	var srMap map[uuid.UUID]*payloads.StorageRepository
+	var pbdsBySR map[uuid.UUID][]*payloads.PBD
+	var hostMap map[uuid.UUID]*payloads.Host
+	if len(page) > 0 {
+		allSRs, err := driver.xoClient.SR().GetAll(ctx, 0, "")
+		if err != nil {
+			klog.ErrorS(err, "Failed to list SRs for volume condition reporting")
+			return nil, status.Errorf(codes.Internal, "failed to list SRs: %v", err)
+		}
+		srMap = make(map[uuid.UUID]*payloads.StorageRepository, len(allSRs))
+		for _, sr := range allSRs {
+			srMap[sr.ID] = sr
+		}
+
+		allPBDs, err := driver.xoClient.PBD().GetAll(ctx, 0, "")
+		if err != nil {
+			klog.ErrorS(err, "Failed to list PBDs for volume condition reporting")
+			return nil, status.Errorf(codes.Internal, "failed to list PBDs: %v", err)
+		}
+		pbdsBySR = make(map[uuid.UUID][]*payloads.PBD, len(allSRs))
+		for _, pbd := range allPBDs {
+			pbdsBySR[pbd.SR] = append(pbdsBySR[pbd.SR], pbd)
+		}
+
+		allHosts, err := driver.xoClient.Host().GetAll(ctx, 0, "")
+		if err != nil {
+			klog.ErrorS(err, "Failed to list hosts for volume condition reporting")
+			return nil, status.Errorf(codes.Internal, "failed to list hosts: %v", err)
+		}
+		hostMap = make(map[uuid.UUID]*payloads.Host, len(allHosts))
+		for _, host := range allHosts {
+			hostMap[host.ID] = host
+		}
+	}
+
+	// Build entries, populating published node IDs for each VDI.
+	entries := make([]*csi.ListVolumesResponse_Entry, 0, len(page))
+	for _, vdi := range page {
+		// Fetch attached VBDs for this VDI — "attached?" server-side filter returns only hot-plugged VBDs.
+		vbds, err := driver.xoClient.VBD().GetAll(ctx, 0, fmt.Sprintf("VDI:%s attached?", vdi.ID))
+		if err != nil {
+			klog.ErrorS(err, "Failed to get VBDs for VDI", "vdiID", vdi.ID)
+			return nil, status.Errorf(codes.Internal, "failed to get VBDs for VDI %s: %v", vdi.ID, err)
+		}
+
+		publishedNodeIDs := make([]string, 0, len(vbds))
+		for _, vbd := range vbds {
+			publishedNodeIDs = append(publishedNodeIDs, vbd.VM.String())
+		}
+
+		// Determine volume condition: start with VDI missing check, then SR health,
+		// then layer PBD connectivity.
+		var condition *csi.VolumeCondition
+		if vdi.Missing {
+			// VDI has been removed from the storage backend outside of Kubernetes.
+			// Per KEP-1432 "VolumeNotFound" use case, report as abnormal immediately.
+			condition = &csi.VolumeCondition{
+				Abnormal: true,
+				Message:  "VolumeNotFound - the volume is deleted from backend",
+			}
+		} else {
+			condition = volumeConditionFromSR(srMap[vdi.SR], vdi.SR)
+			if condition != nil && !condition.Abnormal && len(vbds) > 0 {
+				publishedHosts := make([]uuid.UUID, 0, len(vbds))
+				for _, vbd := range vbds {
+					vm, vmErr := driver.xoClient.VM().GetByID(ctx, vbd.VM)
+					if vmErr != nil {
+						klog.ErrorS(vmErr, "Failed to get VM for PBD check in ListVolumes", "vmID", vbd.VM, "vdiID", vdi.ID)
+						return nil, status.Errorf(codes.Internal, "failed to get VM %s for PBD check: %v", vbd.VM, vmErr)
+					}
+					publishedHosts = append(publishedHosts, vm.Container)
+				}
+				if pbdCond := volumeConditionFromPBDs(srMap[vdi.SR], publishedHosts, pbdsBySR[vdi.SR], hostMap); pbdCond != nil {
+					condition = pbdCond
+				}
+			}
+		}
+
+		entries = append(entries, &csi.ListVolumesResponse_Entry{
+			Volume: &csi.Volume{
+				VolumeId:      vdi.ID.String(),
+				CapacityBytes: vdi.Size,
+			},
+			Status: &csi.ListVolumesResponse_VolumeStatus{
+				PublishedNodeIds: publishedNodeIDs,
+				VolumeCondition:  condition,
+			},
+		})
+	}
+
+	// Compute next token.
+	nextToken := ""
+	if end < total {
+		nextToken = strconv.Itoa(end)
+	}
+
+	klog.V(5).InfoS("ListVolumes completed", "total", total, "returned", len(entries), "nextToken", nextToken)
+	return &csi.ListVolumesResponse{
+		Entries:   entries,
+		NextToken: nextToken,
+	}, nil
 }
 
 // ValidateVolumeCapabilities implements Driver.
@@ -390,4 +691,70 @@ func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 // "API error: 404 Not Found - <body>".
 func isNotFoundError(err error) bool {
 	return strings.Contains(err.Error(), "404")
+}
+
+// srCapacityThreshold is the fraction of SR physical usage at which a volume
+// is considered out of capacity. Matches KEP-1432 "OutOfCapacity" use case.
+const srCapacityThreshold = 0.95
+
+// volumeConditionFromSR returns a VolumeCondition based on SR health.
+// sr is nil when the SR was not found.
+// Messages follow the KEP-1432 "Type - detail" format and include both the
+// human-readable NameLabel and the UUID for unambiguous identification.
+func volumeConditionFromSR(sr *payloads.StorageRepository, srID uuid.UUID) *csi.VolumeCondition {
+	if sr == nil {
+		return &csi.VolumeCondition{
+			Abnormal: true,
+			Message:  fmt.Sprintf("VolumeNotFound - SR %s not found", srID),
+		}
+	}
+	if sr.InMaintenanceMode {
+		return &csi.VolumeCondition{
+			Abnormal: true,
+			Message:  fmt.Sprintf("Abnormal - SR '%s' (%s) is in maintenance mode", sr.NameLabel, sr.ID),
+		}
+	}
+	if sr.Size > 0 && sr.PhysicalUsage/sr.Size >= srCapacityThreshold {
+		return &csi.VolumeCondition{
+			Abnormal: true,
+			Message:  fmt.Sprintf("OutOfCapacity - SR '%s' (%s) is out of capacity (%.0f%% used)", sr.NameLabel, sr.ID, sr.PhysicalUsage/sr.Size*100),
+		}
+	}
+	return &csi.VolumeCondition{Abnormal: false}
+}
+
+// volumeConditionFromPBDs checks PBD connectivity for all published nodes of a volume.
+// pbds is the list of PBDs for the SR (fetched with SR:<srID> filter).
+// publishedHosts is the list of host UUIDs for each published VM node (uuid.Nil entries,
+// which occur for halted VMs, are skipped).
+// hostMap is a map of host UUID to Host object used to include the human-readable host name
+// in the condition message; if a host UUID is absent from the map the UUID is used as fallback.
+// Returns an abnormal VolumeCondition if any live host is missing an attached PBD for the SR,
+// or nil if there are no hosts to check (all halted or no published nodes).
+func volumeConditionFromPBDs(sr *payloads.StorageRepository, publishedHosts []uuid.UUID, pbds []*payloads.PBD, hostMap map[uuid.UUID]*payloads.Host) *csi.VolumeCondition {
+	// Build a set of hosts that have an attached PBD for this SR.
+	attachedHosts := make(map[uuid.UUID]struct{}, len(pbds))
+	for _, pbd := range pbds {
+		if pbd.Attached {
+			attachedHosts[pbd.Host] = struct{}{}
+		}
+	}
+
+	for _, hostID := range publishedHosts {
+		// Skip halted VMs (Container == uuid.Nil means no host).
+		if hostID == uuid.Nil {
+			continue
+		}
+		if _, ok := attachedHosts[hostID]; !ok {
+			hostLabel := hostID.String()
+			if h, found := hostMap[hostID]; found {
+				hostLabel = fmt.Sprintf("'%s' (%s)", h.NameLabel, hostID)
+			}
+			return &csi.VolumeCondition{
+				Abnormal: true,
+				Message:  fmt.Sprintf("Abnormal - SR '%s' (%s) has no attached PBD on host %s", sr.NameLabel, sr.ID, hostLabel),
+			}
+		}
+	}
+	return nil
 }
