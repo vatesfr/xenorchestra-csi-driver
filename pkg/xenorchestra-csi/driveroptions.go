@@ -48,6 +48,11 @@ type DriverOptions struct {
 	// VDINamePrefix is prepended to the Kubernetes volume name when constructing
 	// the VDI name label in Xen Orchestra. Defaults to DefaultVDINamePrefix ("csi-").
 	VDINamePrefix string
+	// ClusterTag is added to every VDI created by this driver and used to filter
+	// VDIs. Use a unique value per cluster when running multiple clusters against the same
+	// XO instance. Defaults to DefaultClusterTag ("k8s-managed"). Set to "" to disable
+	// tagging and filtering entirely.
+	ClusterTag string
 }
 
 func (o *DriverOptions) AddFlags() *flag.FlagSet {
@@ -59,12 +64,17 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 	// the flag is never passed on the command line.
 	o.NodeMetadataSource = NodeMetadataSourceKubernetes
 	o.VDINamePrefix = DefaultVDINamePrefix
+	o.ClusterTag = DefaultClusterTag
 	fs.StringVar(&o.NodeName, "node-name", "", "Node name")
 	fs.StringVar(&o.DriverName, "driver-name", DriverName, "Driver name")
 	fs.StringVar(&o.Endpoint, "endpoint", "unix://tmp/csi.sock", "CSI endpoint")
 	fs.StringVar(&o.ConfigFile, "config-file", "/etc/xenorchestra/config.yaml", "Path to XO configuration file")
 	fs.StringVar(&o.VDINamePrefix, "vdi-name-prefix", DefaultVDINamePrefix,
 		"Prefix prepended to the Kubernetes volume name when naming VDIs in Xen Orchestra (default: \"csi-\")")
+	fs.StringVar(&o.ClusterTag, "cluster-tag", DefaultClusterTag,
+		"Tag added to all VDIs created by this driver. "+
+			"Use a unique value per cluster when running multiple clusters against the same XO instance. "+
+			"Set to \"\" to disable tagging and filtering.")
 	fs.Func("node-metadata-source",
 		`Source used by the node plugin to resolve pool ID and VM identity.
 Allowed values:

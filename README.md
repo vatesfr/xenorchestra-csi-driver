@@ -146,6 +146,7 @@ parameters:
 
 ### XO related
 - [x] Pool selection via `StorageClass.parameters.poolId`
+- [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
 - [ ] Implement `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — required to legally return `AccessibleTopology` in `CreateVolumeResponse` and to receive topology requirements in `CreateVolumeRequest`
 - [ ] Cluster Topology support
 - [ ] Multi-SR support (migration...)

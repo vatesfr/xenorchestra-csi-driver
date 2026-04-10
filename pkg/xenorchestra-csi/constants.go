@@ -27,4 +27,10 @@ const (
 	// constructing the VDI name label in Xen Orchestra. Override it at
 	// driver startup with the --vdi-name-prefix flag.
 	DefaultVDINamePrefix = "csi-"
+
+	// DefaultClusterTag is the default tag added to all VDIs created by this driver.
+	// Override with --cluster-tag at driver startup.
+	// Use a unique value per cluster when running multiple Kubernetes clusters against
+	// the same Xen Orchestra instance (e.g. "k8s-prod", "k8s-staging").
+	DefaultClusterTag = "k8s-managed"
 )
