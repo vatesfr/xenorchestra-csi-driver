@@ -67,6 +67,10 @@ func TestSanity(t *testing.T) {
 	// tests that require unimplemented features (CreateVolume, etc.).
 	cfg := sanity.NewTestConfig()
 	cfg.Address = sanityEndpoint
+	// poolId must be a valid UUID; the stub's Pool.Get returns a pool with a non-nil DefaultSR.
+	cfg.TestVolumeParameters = map[string]string{
+		"poolId": "00000000-0000-0000-0000-000000000001",
+	}
 	cfg.DialOptions = []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithAuthority("localhost"),

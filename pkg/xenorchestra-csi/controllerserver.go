@@ -286,6 +286,38 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	}
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
 
+	// Idempotency: search for an existing VDI with the same name before creating.
+	existingVDIs, err := driver.xoClient.VDI().GetAll(ctx, 0, diskName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to search for existing VDI", "diskName", diskName)
+		return nil, status.Errorf(codes.Internal, "failed to search for existing VDI: %v", err)
+	}
+	for _, existing := range existingVDIs {
+		if existing.NameLabel != diskName {
+			continue
+		}
+		if capacityBytes > 0 && existing.Size != capacityBytes {
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume with name %q already exists with a different capacity (%d != %d)",
+				diskName, existing.Size, capacityBytes)
+		}
+		klog.V(5).InfoS("Returning existing VDI for idempotent CreateVolume", "vdiID", existing.ID, "diskName", diskName)
+		return &csi.CreateVolumeResponse{
+			Volume: &csi.Volume{
+				VolumeId:      existing.ID.String(),
+				CapacityBytes: existing.Size,
+				AccessibleTopology: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"pool": pool.ID.String(),
+							"sr":   pool.DefaultSR.String(),
+						},
+					},
+				},
+			},
+		}, nil
+	}
+
 	vdiParams := payloads.VDICreateParams{
 		SRId:            pool.DefaultSR,
 		NameLabel:       diskName,
@@ -328,9 +360,16 @@ func (driver *xenorchestraCSIDriver) DeleteSnapshot(context.Context, *csi.Delete
 func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	klog.V(5).Infof("DeleteVolume called, request: %v", req)
 
-	volumeID, err := uuid.FromString(req.GetVolumeId())
+	volumeIDStr := req.GetVolumeId()
+	if volumeIDStr == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
+	}
+
+	volumeID, err := uuid.FromString(volumeIDStr)
 	if err != nil || volumeID == uuid.Nil {
-		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required and must be a valid UUID")
+		// Non-empty but not a UUID: cannot be a volume managed by this driver.
+		klog.V(5).InfoS("DeleteVolume called with non-UUID volume ID, treating as already deleted", "volumeID", volumeIDStr)
+		return &csi.DeleteVolumeResponse{}, nil
 	}
 
 	// Check whether the VDI still exists. Return success immediately if it is already gone
