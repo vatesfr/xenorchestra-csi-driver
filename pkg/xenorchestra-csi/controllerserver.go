@@ -228,12 +228,12 @@ func (driver *xenorchestraCSIDriver) CreateSnapshot(context.Context, *csi.Create
 // CreateVolume implements Driver.
 func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	klog.V(5).Infof("CreateVolume called, request: %v", req)
-	// (
-	// 	req=name:"pvc-b6ffb29f-633d-448e-b444-1a1a3faf6f4b"
-	// 	capacity_range:{required_bytes:1073741824}
-	// 	volume_capabilities:{mount:{fs_type:"ext4"}
-	// 	access_mode:{mode:SINGLE_NODE_WRITER}}
-	// )
+
+	// FIXME: "should not fail when requesting to create a volume with already existing name and same capacity"
+	//  => It should return the existing volume instead of creating a new one.
+
+	// FIXME: "should fail when requesting to create a volume with already existing name and different capacity"
+	//  => It should return an error instead of creating a new volume.
 
 	volumeName := req.GetName()
 	if volumeName == "" {
@@ -328,9 +328,13 @@ func (driver *xenorchestraCSIDriver) DeleteSnapshot(context.Context, *csi.Delete
 func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	klog.V(5).Infof("DeleteVolume called, request: %v", req)
 
+	if req.GetVolumeId() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
+	}
+
 	volumeID, err := uuid.FromString(req.GetVolumeId())
 	if err != nil || volumeID == uuid.Nil {
-		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required and must be a valid UUID")
+		return &csi.DeleteVolumeResponse{}, nil // Treat invalid volume ID as already deleted to be idempotent
 	}
 
 	// Check whether the VDI still exists. Return success immediately if it is already gone
