@@ -37,10 +37,11 @@ type Driver interface {
 }
 
 type xenorchestraCSIDriver struct {
-	Name     string
-	NodeID   string
-	Version  string
-	endpoint string
+	Name          string
+	NodeID        string
+	Version       string
+	endpoint      string
+	vdiNamePrefix string
 	csi.UnimplementedControllerServer
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
@@ -112,7 +113,19 @@ func NewDriver(options *DriverOptions) Driver {
 		nodeMetadataGetter = clients.NewNodeMetadataFromKubernetes(kclient, options.NodeName)
 	}
 
-	return newDriver(options, nodeMetadataGetter, clients.NewXoClient(xoSDKClient.Client), clients.NewSafeMounter())
+	klog.Infof("Driver: %v ", options.DriverName)
+	klog.Infof("Version: %s", driverVersion)
+	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
+
+	return &xenorchestraCSIDriver{
+		Name:          options.DriverName,
+		Version:       driverVersion,
+		endpoint:      options.Endpoint,
+		vdiNamePrefix: options.VDINamePrefix,
+		nodeMetadata:  nodeMetadataGetter,
+		xoClient:      clients.NewXoClient(xoSDKClient.Client),
+		mounter:       clients.NewSafeMounter(),
+	}
 }
 
 // Run implements Driver.
