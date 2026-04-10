@@ -18,19 +18,26 @@ package stub
 import (
 	"context"
 	"io"
+	"testing"
 
 	"github.com/gofrs/uuid"
+	gomock "go.uber.org/mock/gomock"
 
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 	"github.com/vatesfr/xenorchestra-go-sdk/client"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library"
+	xoMock "github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library/mock"
 )
 
-type xoClientStub struct{}
+type xoClientStub struct {
+	t *testing.T
+}
 
-func NewXoClientStub() xoClientStub {
-	return xoClientStub{}
+func NewXoClientStub(t *testing.T) xoClientStub {
+	return xoClientStub{
+		t: t,
+	}
 }
 
 // Host implements [clients.XoClient].
@@ -40,7 +47,14 @@ func (c xoClientStub) Host() library.Host {
 
 // Pool implements [clients.XoClient].
 func (c xoClientStub) Pool() library.Pool {
-	return nil
+	ctrl := gomock.NewController(c.t)
+	mockPool := xoMock.NewMockPool(ctrl)
+	mockPool.EXPECT().Get(gomock.Any(), gomock.Any()).Return(&payloads.Pool{
+		ID:        uuid.Must(uuid.NewV4()),
+		NameLabel: "stub-pool",
+		DefaultSR: uuid.Must(uuid.NewV4()),
+	}, nil).AnyTimes()
+	return mockPool
 }
 
 // Task implements [clients.XoClient].
@@ -50,6 +64,16 @@ func (c xoClientStub) Task() library.Task {
 
 // V1Client implements [clients.XoClient].
 func (c xoClientStub) V1Client() client.XOClient {
+	return nil
+}
+
+// SR implements [clients.XoClient].
+func (c xoClientStub) SR() library.SR {
+	return nil
+}
+
+// PBD implements [clients.XoClient].
+func (c xoClientStub) PBD() library.PBD {
 	return nil
 }
 
@@ -132,6 +156,10 @@ func (v vdiStub) Import(_ context.Context, _ uuid.UUID, _ payloads.VDIFormat, _ 
 
 func (v vdiStub) Migrate(_ context.Context, _ uuid.UUID, _ uuid.UUID) (string, error) {
 	return "", nil
+}
+
+func (v vdiStub) Create(_ context.Context, _ payloads.VDICreateParams) (uuid.UUID, error) {
+	return uuid.Must(uuid.NewV4()), nil
 }
 
 // Compile time check to ensure vdiStub implements the library.VDI interface

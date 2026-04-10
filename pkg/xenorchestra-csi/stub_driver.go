@@ -15,15 +15,19 @@ limitations under the License.
 */
 package xenorchestracsi
 
-import "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
+import (
+	"testing"
+
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
+)
 
 // NewStubDriver creates a driver with in-memory stubs for all external
 // dependencies. It is intended exclusively for use in tests.
-func NewStubDriver(options *DriverOptions) Driver {
+func NewStubDriver(t *testing.T, options *DriverOptions) Driver {
 	return newDriver(
 		options,
 		stub.NewNodeMetadataGetterStub(),
-		stub.NewXoClientStub(),
+		stub.NewXoClientStub(t),
 		stub.NewStubMounter(),
 	)
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -33,9 +34,31 @@ var skipPatterns = []string{
 	"volume lifecycle",
 }
 
+type CustomIDGenerator struct {
+	// Empty struct since no state is needed to generate IDs
+}
+
+var _ sanity.IDGenerator = &CustomIDGenerator{}
+
+func (d CustomIDGenerator) GenerateUniqueValidVolumeID() string {
+	return uuid.Must(uuid.NewV4()).String()
+}
+
+func (d CustomIDGenerator) GenerateInvalidVolumeID() string {
+	return "fake-vol-id"
+}
+
+func (d CustomIDGenerator) GenerateUniqueValidNodeID() string {
+	return uuid.Must(uuid.NewV4()).String()
+}
+
+func (d CustomIDGenerator) GenerateInvalidNodeID() string {
+	return "fake-node-id"
+}
+
 func TestSanity(t *testing.T) {
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
-	driver := xenorchestracsi.NewStubDriver(&xenorchestracsi.DriverOptions{
+	driver := xenorchestracsi.NewStubDriver(t, &xenorchestracsi.DriverOptions{
 		DriverName: driverName,
 		NodeName:   nodeName,
 		Endpoint:   sanityEndpoint,
@@ -72,6 +95,11 @@ func TestSanity(t *testing.T) {
 		grpc.WithAuthority("localhost"),
 	}
 	cfg.ControllerDialOptions = cfg.DialOptions
+
+	cfg.TestVolumeParameters = map[string]string{
+		"poolId": uuid.Must(uuid.NewV4()).String(),
+	}
+	cfg.IDGen = &CustomIDGenerator{}
 
 	sc := sanity.GinkgoTest(&cfg)
 

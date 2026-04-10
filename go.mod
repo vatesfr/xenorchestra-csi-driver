@@ -11,6 +11,7 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/vatesfr/xenorchestra-go-sdk v1.15.1
 	github.com/vatesfr/xenorchestra-k8s-common v0.2.0
+	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.79.1
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
