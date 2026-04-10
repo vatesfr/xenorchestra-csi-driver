@@ -376,3 +376,16 @@ csi.xenorchestra.vates.tech
 | Parameter | Description | Required | Example |
 | --------- | ----------- | -------- | ------- |
 | `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | **Yes** | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
+
+### Driver startup flags
+
+These flags are passed as container arguments in the controller/node deployment manifests.
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--driver-name` | CSI driver name registered with Kubernetes | `csi.xenorchestra.vates.tech` |
+| `--endpoint` | CSI gRPC endpoint | `unix://tmp/csi.sock` |
+| `--config-file` | Path to the XO credentials config file mounted in the pod | `/etc/xenorchestra/config.yaml` |
+| `--vdi-name-prefix` | Prefix prepended to the Kubernetes volume name when labelling VDIs in XO | `csi-` |
+| `--cluster-tag` | Tag added to every VDI at creation; `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. | `k8s-managed` |
+| `--node-metadata-source` | How the node plugin resolves the pool ID and VM identity: `kubernetes` (reads `spec.providerID`, requires CCM) or `xo-api` (queries XO directly) | `kubernetes` |

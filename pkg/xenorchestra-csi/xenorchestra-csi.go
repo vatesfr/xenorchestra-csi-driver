@@ -41,6 +41,7 @@ type xenorchestraCSIDriver struct {
 	Version       string
 	endpoint      string
 	vdiNamePrefix string
+	clusterTag    string
 	csi.UnimplementedControllerServer
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
@@ -109,12 +110,14 @@ func NewDriver(options *DriverOptions) Driver {
 	klog.Infof("Driver: %v ", options.DriverName)
 	klog.Infof("Version: %s", driverVersion)
 	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
+	klog.Infof("Cluster tag: %q", options.ClusterTag)
 
 	return &xenorchestraCSIDriver{
 		Name:          options.DriverName,
 		Version:       driverVersion,
 		endpoint:      options.Endpoint,
 		vdiNamePrefix: options.VDINamePrefix,
+		clusterTag:    options.ClusterTag,
 		nodeMetadata:  nodeMetadataGetter,
 		xoClient:      NewXoClient(xoClient.Client),
 		mounter:       NewSafeMounter(),

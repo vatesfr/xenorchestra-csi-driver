@@ -33,6 +33,7 @@ go.work.sum
 .devspace
 
 xo-config.yaml
+xo-config.env
 
 .vscode/*
 !.vscode/launch.json

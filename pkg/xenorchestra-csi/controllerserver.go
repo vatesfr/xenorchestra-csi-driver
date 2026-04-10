@@ -18,6 +18,7 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -108,6 +109,17 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	vdi, err := driver.xoClient.VDI().Get(ctx, volumeId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get VDI: %v", err)
+	}
+
+	// Adopt the VDI into this cluster's tag set if the tag is not already present.
+	// This ensures static (pre-existing) VDIs are visible without requiring manual
+	// re-tagging.
+	if driver.clusterTag != "" && !slices.Contains(vdi.Tags, driver.clusterTag) {
+		if err := driver.xoClient.VDI().AddTag(ctx, vdi.ID, driver.clusterTag); err != nil {
+			klog.ErrorS(err, "Failed to add cluster tag to VDI", "vdiID", vdi.ID, "tag", driver.clusterTag)
+			return nil, status.Errorf(codes.Internal, "failed to add cluster tag to VDI %s: %v", vdi.ID, err)
+		}
+		klog.V(4).InfoS("Added cluster tag to VDI", "vdiID", vdi.ID, "tag", driver.clusterTag)
 	}
 
 	// Get Node/VM
@@ -273,12 +285,16 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	}
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
 
-	vdiID, err := driver.xoClient.VDI().Create(ctx, payloads.VDICreateParams{
+	vdiParams := payloads.VDICreateParams{
 		SRId:            pool.DefaultSR,
 		NameLabel:       diskName,
 		VirtualSize:     capacityBytes,
 		NameDescription: "VDI managed by the Kubernetes CSI",
-	})
+	}
+	if driver.clusterTag != "" {
+		vdiParams.Tags = []string{driver.clusterTag}
+	}
+	vdiID, err := driver.xoClient.VDI().Create(ctx, vdiParams)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "diskName", diskName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
