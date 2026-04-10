@@ -11,56 +11,64 @@ metadata:
     app.kubernetes.io/part-of: xenorchestra-csi-driver
     app.kubernetes.io/name: csi-xenorchestra-controller-sa
     app.kubernetes.io/component: serviceaccount
+---
 
-# ---
+# TODO: Not implemented yet (dynamic provisioning)
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-external-provisioner-role
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "persistentvolumes" ]
+    verbs: [ "get", "list", "watch", "create", "patch", "delete" ]
+  - apiGroups: [ "" ]
+    resources: [ "persistentvolumeclaims" ]
+    verbs: [ "get", "list", "watch", "update" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "storageclasses" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "" ]
+    resources: [ "events" ]
+    verbs: [ "list", "watch", "create", "update", "patch" ]
+  # The "watch" and "update" verbs for volumesnapshots are optional but recommended.
+  # They enable finalizer-based protection to prevent snapshots from being deleted
+  # during provisioning. Without these permissions, the provisioner will still function
+  # but snapshot protection will be unavailable. This makes the provisioner backwards
+  # compatible with older RBAC configurations.
+  - apiGroups: [ "snapshot.storage.k8s.io" ]
+    resources: [ "volumesnapshots" ]
+    verbs: [ "get", "list", "watch", "update" ]
+  - apiGroups: [ "snapshot.storage.k8s.io" ]
+    resources: [ "volumesnapshotcontents" ]
+    verbs: [ "get", "list" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "csinodes" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "" ]
+    resources: [ "nodes" ]
+    verbs: [ "get", "list", "watch" ]
+  # Access to volumeattachments is only needed when the CSI driver
+  # has the PUBLISH_UNPUBLISH_VOLUME controller capability.
+  # In that case, external-provisioner will watch volumeattachments
+  # to determine when it is safe to delete a volume.
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "volumeattachments" ]
+    verbs: [ "get", "list", "watch" ]
+---
 
-# # TODO: Not implemented yet (dynamic provisioning)
-# kind: ClusterRole
-# apiVersion: rbac.authorization.k8s.io/v1
-# metadata:
-#   name: csi-xenorchestra-external-provisioner-role
-# rules:
-#   - apiGroups: [ "" ]
-#     resources: [ "persistentvolumes" ]
-#     verbs: [ "get", "list", "watch", "create", "patch", "delete" ]
-#   - apiGroups: [ "" ]
-#     resources: [ "persistentvolumeclaims" ]
-#     verbs: [ "get", "list", "watch", "update" ]
-#   - apiGroups: [ "storage.k8s.io" ]
-#     resources: [ "storageclasses" ]
-#     verbs: [ "get", "list", "watch" ]
-#   - apiGroups: [ "" ]
-#     resources: [ "events" ]
-#     verbs: [ "get", "list", "watch", "create", "update", "patch" ]
-#   - apiGroups: [ "storage.k8s.io" ]
-#     resources: [ "csinodes" ]
-#     verbs: [ "get", "list", "watch" ]
-#   - apiGroups: [ "" ]
-#     resources: [ "nodes" ]
-#     verbs: [ "get", "list", "watch" ]
-#   - apiGroups: [ "snapshot.storage.k8s.io" ]
-#     resources: [ "volumesnapshots" ]
-#     verbs: [ "get", "list" ]
-#   - apiGroups: [ "snapshot.storage.k8s.io" ]
-#     resources: [ "volumesnapshotcontents" ]
-#     verbs: [ "get", "list" ]
-#   - apiGroups: [ "coordination.k8s.io" ]
-#     resources: [ "leases" ]
-#     verbs: [ "get", "watch", "list", "delete", "update", "create", "patch" ]
-# ---
-
-# kind: ClusterRoleBinding
-# apiVersion: rbac.authorization.k8s.io/v1
-# metadata:
-#   name: csi-xenorchestra-provisioner-binding
-# subjects:
-#   - kind: ServiceAccount
-#     name: csi-xenorchestra-controller-sa
-#     namespace: kube-system
-# roleRef:
-#   kind: ClusterRole
-#   name: csi-xenorchestra-external-provisioner-role
-#   apiGroup: rbac.authorization.k8s.io
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-provisioner-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-xenorchestra-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-xenorchestra-external-provisioner-role
+  apiGroup: rbac.authorization.k8s.io
 ---
 
 kind: ClusterRole

@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-dynamic
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  # poolId is mandatory. Replace with your Xen Orchestra pool UUID.
+  # The VDI will be created on that pool's default SR.
+  poolId: "6e0c5f16-923f-2971-a07d-ad1486f67309"
