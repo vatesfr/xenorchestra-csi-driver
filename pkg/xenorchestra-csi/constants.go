@@ -33,4 +33,12 @@ const (
 	// Use a unique value per cluster when running multiple Kubernetes clusters against
 	// the same Xen Orchestra instance (e.g. "k8s-prod", "k8s-staging").
 	DefaultClusterTag = "k8s-managed"
+
+	// VDIOtherConfigKeyPVName is the key in VDI's other_config map that stores
+	// the Kubernetes PersistentVolume name associated with this VDI.
+	VDIOtherConfigKeyPVName = "kubernetesPVName"
+
+	// VDIOtherConfigKeyCreatedBy is the key in VDI's other_config map that identifies
+	// the component that created the VDI (always set to the driver name).
+	VDIOtherConfigKeyCreatedBy = "createdBy"
 )

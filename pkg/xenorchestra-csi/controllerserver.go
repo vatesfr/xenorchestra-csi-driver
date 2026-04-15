@@ -18,6 +18,7 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -229,12 +230,6 @@ func (driver *xenorchestraCSIDriver) CreateSnapshot(context.Context, *csi.Create
 func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	klog.V(5).Infof("CreateVolume called, request: %v", req)
 
-	// FIXME: "should not fail when requesting to create a volume with already existing name and same capacity"
-	//  => It should return the existing volume instead of creating a new one.
-
-	// FIXME: "should fail when requesting to create a volume with already existing name and different capacity"
-	//  => It should return an error instead of creating a new volume.
-
 	volumeName := req.GetName()
 	if volumeName == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "disk name is required")
@@ -286,11 +281,35 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	}
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
 
+	existingVDIs, err := driver.xoClient.VDI().GetAll(ctx, 1, fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyPVName, volumeName))
+	if err != nil {
+		klog.ErrorS(err, "Failed to check for existing VDI", "volumeName", volumeName)
+		return nil, status.Errorf(codes.Internal, "failed to check for existing VDI: %v", err)
+	}
+	if len(existingVDIs) > 0 {
+		existingVDI := existingVDIs[0]
+		if existingVDI.Size != capacityBytes {
+			return nil, status.Errorf(codes.AlreadyExists, "volume with name %q already exists with different capacity: existing %d, requested %d", volumeName, existingVDI.Size, capacityBytes)
+		}
+		klog.V(5).InfoS("Volume already exists, returning existing VDI", "vdiID", existingVDI.ID, "volumeName", volumeName)
+		return &csi.CreateVolumeResponse{
+			Volume: &csi.Volume{
+				VolumeId:           existingVDI.ID.String(),
+				CapacityBytes:      capacityBytes,
+				AccessibleTopology: driver.buildAccessibleTopology(pool),
+			},
+		}, nil
+	}
+
 	vdiParams := payloads.VDICreateParams{
 		SRId:            pool.DefaultSR,
 		NameLabel:       diskName,
 		VirtualSize:     capacityBytes,
 		NameDescription: "VDI managed by the Kubernetes CSI",
+		OtherConfig: map[string]string{
+			VDIOtherConfigKeyCreatedBy: DriverName,
+			VDIOtherConfigKeyPVName:    volumeName,
+		},
 	}
 	if driver.clusterTag != "" {
 		vdiParams.Tags = []string{driver.clusterTag}
@@ -304,16 +323,9 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      vdiID.String(),
-			CapacityBytes: capacityBytes,
-			AccessibleTopology: []*csi.Topology{
-				{
-					Segments: map[string]string{
-						"pool": pool.ID.String(),
-						"sr":   pool.DefaultSR.String(),
-					},
-				},
-			},
+			VolumeId:           vdiID.String(),
+			CapacityBytes:      capacityBytes,
+			AccessibleTopology: driver.buildAccessibleTopology(pool),
 		},
 	}, nil
 }
@@ -397,6 +409,17 @@ func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolum
 func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(context.Context, *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	klog.Error("ValidateVolumeCapabilities is not implemented")
 	return nil, status.Error(codes.Unimplemented, "ValidateVolumeCapabilities is not implemented")
+}
+
+func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool) []*csi.Topology {
+	return []*csi.Topology{
+		{
+			Segments: map[string]string{
+				"pool": pool.ID.String(),
+				"sr":   pool.DefaultSR.String(),
+			},
+		},
+	}
 }
 
 func publishContextFromVBD(vbd payloads.VBD) map[string]string {
