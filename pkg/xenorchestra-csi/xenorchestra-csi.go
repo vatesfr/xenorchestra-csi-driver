@@ -51,8 +51,8 @@ type xenorchestraCSIDriver struct {
 	mounter      clients.Mounter
 }
 
-// newDriver is the internal constructor shared by NewDriver and NewStubDriver.
-func newDriver(options *DriverOptions, nodeMetadata clients.NodeMetadataGetter, xoClient clients.XoClient, mounter clients.Mounter) Driver {
+// NewDriverWithDependencies is the internal constructor shared by NewDriver and NewStubDriver.
+func NewDriverWithDependencies(options *DriverOptions, nodeMetadata clients.NodeMetadataGetter, xoClient clients.XoClient, mounter clients.Mounter) Driver {
 	if options.DriverName == "" {
 		klog.Fatal("no driver name provided")
 	}
@@ -64,13 +64,17 @@ func newDriver(options *DriverOptions, nodeMetadata clients.NodeMetadataGetter, 
 	}
 	klog.Infof("Driver: %v ", options.DriverName)
 	klog.Infof("Version: %s", driverVersion)
+	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
+	klog.Infof("Cluster tag: %q", options.ClusterTag)
 	return &xenorchestraCSIDriver{
-		Name:         options.DriverName,
-		Version:      driverVersion,
-		endpoint:     options.Endpoint,
-		nodeMetadata: nodeMetadata,
-		xoClient:     xoClient,
-		mounter:      mounter,
+		Name:          options.DriverName,
+		Version:       driverVersion,
+		endpoint:      options.Endpoint,
+		vdiNamePrefix: options.VDINamePrefix,
+		clusterTag:    options.ClusterTag,
+		nodeMetadata:  nodeMetadata,
+		xoClient:      xoClient,
+		mounter:       mounter,
 	}
 }
 
@@ -114,21 +118,7 @@ func NewDriver(options *DriverOptions) Driver {
 		nodeMetadataGetter = clients.NewNodeMetadataFromKubernetes(kclient, options.NodeName)
 	}
 
-	klog.Infof("Driver: %v ", options.DriverName)
-	klog.Infof("Version: %s", driverVersion)
-	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
-	klog.Infof("Cluster tag: %q", options.ClusterTag)
-
-	return &xenorchestraCSIDriver{
-		Name:          options.DriverName,
-		Version:       driverVersion,
-		endpoint:      options.Endpoint,
-		vdiNamePrefix: options.VDINamePrefix,
-		clusterTag:    options.ClusterTag,
-		nodeMetadata:  nodeMetadataGetter,
-		xoClient:      clients.NewXoClient(xoSDKClient.Client),
-		mounter:       clients.NewSafeMounter(),
-	}
+	return NewDriverWithDependencies(options, nodeMetadataGetter, clients.NewXoClient(xoSDKClient.Client), clients.NewSafeMounter())
 }
 
 // Run implements Driver.

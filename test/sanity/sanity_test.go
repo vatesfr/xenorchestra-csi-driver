@@ -58,7 +58,7 @@ func (d CustomIDGenerator) GenerateInvalidNodeID() string {
 
 func TestSanity(t *testing.T) {
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
-	driver := xenorchestracsi.NewStubDriver(t, &xenorchestracsi.DriverOptions{
+	driver, _ := NewFakeDriver(t, &xenorchestracsi.DriverOptions{
 		DriverName: driverName,
 		NodeName:   nodeName,
 		Endpoint:   sanityEndpoint,

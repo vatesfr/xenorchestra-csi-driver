@@ -34,6 +34,8 @@ var ErrVBDNotFound = errors.New("VBD not found")
 
 // This interface extends the library.Library interface to add methods specific to Xen Orchestra operations needed by the CSI driver.
 // It's done to encapsulate call to the legacy v1 client waiting for the v2 client to support all required operations.
+//
+//go:generate go run -mod=mod go.uber.org/mock/mockgen -source=xoclient.go -destination=mock/xoclient.go -package=mock
 type XoClient interface {
 	library.Library
 	GetVBDFromVDIAndVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
