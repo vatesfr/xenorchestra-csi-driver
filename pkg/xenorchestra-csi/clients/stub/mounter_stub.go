@@ -16,36 +16,79 @@ limitations under the License.
 
 package stub
 
-import "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+import (
+	"sync"
 
-type StubMounter struct{}
+	csisanity "github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
+
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+)
+
+// StubMounter simulates filesystem operations in memory.
+// dirs tracks which target paths are currently "mounted".
+type StubMounter struct {
+	mu   sync.Mutex
+	dirs map[string]bool
+}
 
 func NewStubMounter() *StubMounter {
-	return &StubMounter{}
+	return &StubMounter{
+		dirs: make(map[string]bool),
+	}
 }
 
+// FormatAndMount simulates a format+mount by recording target as mounted.
 func (s *StubMounter) FormatAndMount(source, target, fstype string, options []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dirs[target] = true
 	return nil
 }
 
-func (s *StubMounter) Unmount(target string) error {
-	return nil
-}
-
+// Mount simulates a mount by recording target as mounted.
 func (s *StubMounter) Mount(source, target, fstype string, options []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dirs[target] = true
 	return nil
 }
 
+// Unmount simulates an unmount by removing target from the in-memory map.
+func (s *StubMounter) Unmount(target string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.dirs, target)
+	return nil
+}
+
+// FindDevicePath returns a fake device path, mirroring the real SafeMounter behavior.
 func (s *StubMounter) FindDevicePath(deviceName string, vbdUUID string) (string, error) {
-	return "", nil
+	return "/dev/" + deviceName, nil
 }
 
+// GetDeviceNameFromMount returns a non-empty device name
 func (s *StubMounter) GetDeviceNameFromMount(mountPath string) (string, int, error) {
-	return "", 0, nil
+	return "/dev/xvdc", 0, nil
 }
 
+// IsMountPoint reports whether target is currently tracked as mounted.
 func (s *StubMounter) IsMountPoint(target string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if mounted, ok := s.dirs[target]; ok {
+		return mounted, nil
+	}
 	return false, nil
+}
+
+// CheckPath checks if a path exists in the mounted directories.
+func (s *StubMounter) CheckPath(path string) (csisanity.PathKind, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.dirs[path]; ok {
+		return csisanity.PathIsDir, nil
+	}
+	return csisanity.PathIsNotFound, nil
 }
 
 // Compile time check to ensure StubMounter implements the Mounter interface

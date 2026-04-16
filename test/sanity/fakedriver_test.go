@@ -30,7 +30,7 @@ var vdiStore = struct {
 // for all other external dependencies. It is intended exclusively for use in
 // tests. The returned MockXoClient can be used to set up additional
 // expectations in individual test cases.
-func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions) (xenorchestracsi.Driver, *clientsMock.MockXoClient) {
+func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMounter *stub.StubMounter) (xenorchestracsi.Driver, *clientsMock.MockXoClient) {
 	ctrl := gomock.NewController(t)
 
 	mockPool := newMockPool(ctrl)
@@ -55,7 +55,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions) (xenorc
 		options,
 		stub.NewNodeMetadataGetterStub(),
 		mockXoClient,
-		stub.NewStubMounter(),
+		fakeMounter,
 	), mockXoClient
 }
 

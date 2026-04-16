@@ -2,6 +2,7 @@ package sanity_test
 
 import (
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -25,18 +26,15 @@ const (
 // skipPatterns lists test descriptions to skip because they require features not yet implemented
 // (CreateVolume, ValidateVolumeCapabilities).
 var skipPatterns = []string{
-	// FIXME probable root cause: [FAIL] Node Service NodeUnpublishVolume [It] should remove target path
-	"NodeUnpublishVolume should remove target path",
-	"Node Service should work",
-	"Node Service should be idempotent",
 	// Unimplemented features:
 	"ValidateVolumeCapabilities",
-	"Snapshot",
-	"ListVolumes",
-	"ExpandVolume",
-	"ModifyVolume",
-	"GroupController",
-	"NodeGetVolumeStats",
+	// Automatically skipped because not supported by the driver:
+	// "Snapshot",
+	// "ListVolumes",
+	// "ExpandVolume",
+	// "ModifyVolume",
+	// "GroupController",
+	// "NodeGetVolumeStats",
 }
 
 type CustomIDGenerator struct {
@@ -62,12 +60,16 @@ func (d CustomIDGenerator) GenerateInvalidNodeID() string {
 }
 
 func TestSanity(t *testing.T) {
+	fakeMounter := stub.NewStubMounter()
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
-	driver, _ := NewFakeDriver(t, &xenorchestracsi.DriverOptions{
-		DriverName: driverName,
-		NodeName:   nodeName,
-		Endpoint:   sanityEndpoint,
-	})
+	driver, _ := NewFakeDriver(
+		t,
+		&xenorchestracsi.DriverOptions{
+			DriverName: driverName,
+			NodeName:   nodeName,
+			Endpoint:   sanityEndpoint,
+		},
+		fakeMounter)
 
 	go func() {
 		if err := driver.Run(t.Context()); err != nil {
@@ -86,8 +88,13 @@ func TestSanity(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-
+	// Use temp dir and cleanup any target paths left behind by failed tests
+	tmpDir, err := os.MkdirTemp("", "csi-sanity-*")
+	if err != nil {
+		t.Fatalf("Failed to create sanity temp working dir: %v", err)
+	}
 	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
 		os.Remove(sockPath)
 	})
 
@@ -105,7 +112,26 @@ func TestSanity(t *testing.T) {
 		"poolId": stub.PoolId,
 	}
 	cfg.IDGen = &CustomIDGenerator{}
+	cfg.TargetPath = path.Join(tmpDir, "mount")
+	cfg.StagingPath = path.Join(tmpDir, "staging")
 
+	// Use the fake mounter's methods to simulate filesystem operations in memory,
+	// allowing sanity tests to run without real mounts.
+	cfg.CheckPath = func(path string) (sanity.PathKind, error) {
+		return fakeMounter.CheckPath(path)
+	}
+	cfg.CreateTargetDir = func(path string) (string, error) {
+		return path, fakeMounter.Mount("", path, "", nil)
+	}
+	cfg.CreateStagingDir = func(path string) (string, error) {
+		return path, fakeMounter.Mount("", path, "", nil)
+	}
+	cfg.RemoveStagingPath = func(path string) error {
+		return fakeMounter.Unmount(path)
+	}
+	cfg.RemoveTargetPath = func(path string) error {
+		return fakeMounter.Unmount(path)
+	}
 	sc := sanity.GinkgoTest(&cfg)
 
 	gomega.RegisterFailHandler(ginkgo.Fail)
