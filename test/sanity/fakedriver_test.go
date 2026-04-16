@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/gofrs/uuid"
+	gomock "go.uber.org/mock/gomock"
+
 	xenorchestracsi "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi"
 	clientsMock "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/mock"
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xoLibMock "github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library/mock"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // vdiStore is a package-level in-memory store used by mockVDI to simulate
@@ -34,13 +35,21 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions) (xenorc
 
 	mockPool := newMockPool(ctrl)
 	mockVDI := newMockVDI(ctrl)
+	mockVM := newMockVM(ctrl)
 
 	mockXoClient := clientsMock.NewMockXoClient(ctrl)
 	mockXoClient.EXPECT().Pool().Return(mockPool).AnyTimes()
 	mockXoClient.EXPECT().VDI().Return(mockVDI).AnyTimes()
+	mockXoClient.EXPECT().VM().Return(mockVM).AnyTimes()
 
 	// IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 	mockXoClient.EXPECT().IsVDIUsedAnywhere(gomock.Any(), gomock.Any()).Return([]*payloads.VBD{}, nil).AnyTimes()
+	device := "/dev/xvdc"
+	mockXoClient.EXPECT().AttachVDIToVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(&payloads.VBD{
+		ID:     uuid.Must(uuid.NewV4()),
+		Device: &device,
+	}, nil).AnyTimes()
+	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	return xenorchestracsi.NewDriverWithDependencies(
 		options,
@@ -50,32 +59,52 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions) (xenorc
 	), mockXoClient
 }
 
+func newMockVM(ctrl *gomock.Controller) *xoLibMock.MockVM {
+	mockVM := xoLibMock.NewMockVM(ctrl)
+	mockVM.EXPECT().GetByID(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, id uuid.UUID) (*payloads.VM, error) {
+		// The NodeMetadataGetterStub returns a fixed NodeId and PoolId, so we can return a VM with matching IDs to simulate a valid node metadata scenario.
+		if id == uuid.FromStringOrNil(stub.NodeId) {
+			return &payloads.VM{
+				ID:     id,
+				PoolID: uuid.FromStringOrNil(stub.PoolId),
+			}, nil
+		}
+		// Otherwise, simulate a "not found" error as the driver may query for non-existent VM IDs during tests.
+		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such VM %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"VM\"\n  }\n}", id, id)
+	}).AnyTimes()
+	return mockVM
+}
+
 func newMockPool(ctrl *gomock.Controller) *xoLibMock.MockPool {
 	mockPool := xoLibMock.NewMockPool(ctrl)
-	mockPool.EXPECT().Get(gomock.Any(), gomock.Any()).Return(&payloads.Pool{
-		ID:        uuid.Must(uuid.NewV4()),
-		NameLabel: "fake-pool",
-		DefaultSR: uuid.Must(uuid.NewV4()),
-	}, nil).AnyTimes()
+	mockPool.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, id uuid.UUID) (*payloads.Pool, error) {
+		if id == uuid.FromStringOrNil(stub.PoolId) {
+			return &payloads.Pool{
+				ID:        id,
+				NameLabel: "fake-pool",
+				DefaultSR: uuid.Must(uuid.NewV4()),
+			}, nil
+		}
+		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such Pool %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"Pool\"\n  }\n}", id, id)
+	}).AnyTimes()
 	return mockPool
 }
 
 func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 	mockVDI := xoLibMock.NewMockVDI(ctrl)
-	mockVDI.EXPECT().GetAll(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ int, filters string) ([]payloads.VDI, error) {
+	mockVDI.EXPECT().GetAll(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ int, filters string) ([]*payloads.VDI, error) {
 		vdiStore.RLock()
 		defer vdiStore.RUnlock()
 
 		// Parse "other_config:VDIOtherConfigKeyPVName:<value>" filter
 		prefix := fmt.Sprintf("other_config:%s:", xenorchestracsi.VDIOtherConfigKeyPVName)
 		filterValue, hasFilter := strings.CutPrefix(filters, prefix)
-
-		vdis := make([]payloads.VDI, 0, len(vdiStore.byID))
+		vdis := make([]*payloads.VDI, 0, len(vdiStore.byID))
 		for _, vdi := range vdiStore.byID {
-			if hasFilter && vdi.OtherConfig[xenorchestracsi.VDIOtherConfigKeyPVName] != filterValue {
+			if hasFilter && strings.Compare(vdi.OtherConfig[xenorchestracsi.VDIOtherConfigKeyPVName], filterValue) != 0 {
 				continue
 			}
-			vdis = append(vdis, vdi)
+			vdis = append(vdis, &vdi)
 		}
 		return vdis, nil
 	}).AnyTimes()
@@ -84,7 +113,7 @@ func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 		defer vdiStore.RUnlock()
 		vdi, exists := vdiStore.byID[id]
 		if !exists {
-			return nil, fmt.Errorf("VDI not found")
+			return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such VDI %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"VDI\"\n  }\n}", id, id)
 		}
 		return &vdi, nil
 	}).AnyTimes()
@@ -99,6 +128,7 @@ func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 			Size:            p.VirtualSize,
 			NameDescription: p.NameDescription,
 			OtherConfig:     p.OtherConfig,
+			PoolID:          uuid.FromStringOrNil(stub.PoolId),
 		}
 		return id, nil
 	}).AnyTimes()

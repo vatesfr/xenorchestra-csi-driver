@@ -110,7 +110,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 
 	vdi, err := driver.xoClient.VDI().Get(ctx, volumeId)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get VDI: %v", err)
+		return nil, status.Errorf(codes.NotFound, "failed to get VDI: %v", err)
 	}
 
 	// Adopt the VDI into this cluster's tag set if the tag is not already present.
@@ -127,7 +127,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	// Get Node/VM
 	nodeVM, err := driver.xoClient.VM().GetByID(ctx, vmUUID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get VM by ID %s: %v", vmUUID, err)
+		return nil, status.Errorf(codes.NotFound, "failed to get VM by ID %s: %v", vmUUID, err)
 	}
 	if nodeVM.PoolID != vdi.PoolID {
 		klog.ErrorS(err, "Cannot attach a VDI to a VM that belongs to a different pool", "vdiPool", vdi.PoolID, "vmPool", nodeVM.PoolID)
@@ -433,5 +433,5 @@ func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 // API. The SDK does not expose a dedicated sentinel; errors follow the pattern
 // "API error: 404 Not Found - <body>".
 func isNotFoundError(err error) bool {
-	return strings.Contains(err.Error(), "404")
+	return strings.Contains(err.Error(), "API error: 404 Not Found")
 }

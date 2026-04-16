@@ -16,7 +16,14 @@ limitations under the License.
 
 package stub
 
-import "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+import (
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+)
+
+const (
+	NodeId = "10000000-0000-0000-0000-000000000001"
+	PoolId = "20000000-0000-0000-0000-000000000002"
+)
 
 type NodeMetadataGetterStub struct{}
 
@@ -27,8 +34,8 @@ func NewNodeMetadataGetterStub() *NodeMetadataGetterStub {
 // GetNodeMetadata retrieves node identity and topology metadata from Kubernetes.
 func (n *NodeMetadataGetterStub) GetNodeMetadata() (*clients.NodeMetadata, error) {
 	return &clients.NodeMetadata{
-		NodeId: "00000000-0000-0000-0000-000000000001",
-		PoolId: "stub-pool-id",
+		NodeId: NodeId,
+		PoolId: PoolId,
 	}, nil
 }
 

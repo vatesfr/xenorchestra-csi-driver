@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	xenorchestracsi "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi"
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
 )
 
 const (
@@ -24,14 +25,18 @@ const (
 // skipPatterns lists test descriptions to skip because they require features not yet implemented
 // (CreateVolume, ValidateVolumeCapabilities).
 var skipPatterns = []string{
-	"should remove target path",
-	"NodeStageVolume.*no volume capability is provided",
+	// FIXME probable root cause: [FAIL] Node Service NodeUnpublishVolume [It] should remove target path
+	"NodeUnpublishVolume should remove target path",
 	"Node Service should work",
 	"Node Service should be idempotent",
+	// Unimplemented features:
 	"ValidateVolumeCapabilities",
-	"ControllerPublishVolume.*should fail when the volume does not exist",
-	"ControllerPublishVolume.*should fail when the node does not exist",
-	"volume lifecycle",
+	"Snapshot",
+	"ListVolumes",
+	"ExpandVolume",
+	"ModifyVolume",
+	"GroupController",
+	"NodeGetVolumeStats",
 }
 
 type CustomIDGenerator struct {
@@ -97,7 +102,7 @@ func TestSanity(t *testing.T) {
 	cfg.ControllerDialOptions = cfg.DialOptions
 
 	cfg.TestVolumeParameters = map[string]string{
-		"poolId": uuid.Must(uuid.NewV4()).String(),
+		"poolId": stub.PoolId,
 	}
 	cfg.IDGen = &CustomIDGenerator{}
 
