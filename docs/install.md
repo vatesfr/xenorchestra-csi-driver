@@ -180,6 +180,40 @@ kubectl -n kube-system get pods -l app=csi-xenorchestra-controller
 
 ### 4. Create a StorageClass
 
+Choose the provisioning mode that suits your use case.
+
+#### Dynamic provisioning (recommended)
+
+The driver creates a VDI automatically when a PVC is bound.
+The `poolId` parameter is **required**: it identifies the Xen Orchestra pool whose
+**default SR** will be used to store the new VDI.
+
+```bash
+kubectl apply -f examples/csi-sc-dynamic.yaml
+```
+
+```yaml
+# examples/csi-sc-dynamic.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-dynamic
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  poolId: "<xo-pool-uuid>"   # UUID of the target XO pool
+```
+
+> **How to find the pool UUID in Xen Orchestra:**
+> In the XO web UI, open the pool and copy the UUID from the URL or the pool detail page.
+> Alternatively: `xo-cli xo.getAllObjects filter='{"type":"pool"}' | jq '.[].id'`
+
+#### Static provisioning (pre-existing VDI)
+
+No `poolId` is required. The volume is identified by its VDI UUID in the PV manifest.
+
 ```bash
 kubectl apply -f examples/csi-storageclass.yaml
 ```
@@ -198,14 +232,60 @@ allowVolumeExpansion: false
 
 ---
 
+## Dynamic volume provisioning
+
+The driver creates a VDI in XenOrchestra when Kubernetes binds a PVC to a pod.
+The target SR is always the pool's **default SR**, selected via `poolId` in the
+StorageClass.
+
+### 1. Create the StorageClass
+
+```bash
+kubectl apply -f examples/csi-sc-dynamic.yaml
+```
+
+Replace `<xo-pool-uuid>` with your actual pool UUID before applying.
+
+### 2. Create a PersistentVolumeClaim
+
+```bash
+kubectl apply -f examples/csi-pvc-dynamic.yaml
+```
+
+```yaml
+# examples/csi-pvc-dynamic.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-csi-pvc-dynamic
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-xenorchestra-sc-dynamic
+```
+
+> **`volumeBindingMode: WaitForFirstConsumer`** defers PVC binding until a pod is scheduled.
+> Use `Immediate` if you want volumes to be provisioned as soon as the PVC is created.
+
+### 3. Deploy a pod that uses the PVC
+
+```bash
+kubectl apply -f examples/csi-app.yaml
+```
+
+---
+
 ## Static volume provisioning
 
-Dynamic provisioning is not yet implemented.
-Volumes must be created manually in Xen Orchestra first, then referenced by UUID.
+Use a VDI that already exists in XenOrchestra.
+No `poolId` is required; the volume is bound by its VDI UUID.
 
 ### 1. Create a VDI in Xen Orchestra
 
-Use the Xen Orchestra GUI, CLI, API to create a Virtual Disk Image (VDI).
+Use the Xen Orchestra GUI, CLI, or API to create a Virtual Disk Image (VDI).
 Note its UUID (e.g. `b05f63f2-692a-4833-9453-980a73f9f27f`).
 
 ### 2. Create a PersistentVolume
@@ -290,3 +370,22 @@ csi.xenorchestra.vates.tech
 | ----- | ----------- | -------- | ------- |
 | `volumeHandle` | UUID of the existing VDI | Yes | `b05f63f2-692a-4833-9453-980a73f9f27f` |
 | `driver` | Must be `csi.xenorchestra.vates.tech` | Yes | — |
+
+### Dynamic provisioning – StorageClass parameters
+
+| Parameter | Description | Required | Example |
+| --------- | ----------- | -------- | ------- |
+| `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | **Yes** | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
+
+### Driver startup flags
+
+These flags are passed as container arguments in the controller/node deployment manifests.
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--driver-name` | CSI driver name registered with Kubernetes | `csi.xenorchestra.vates.tech` |
+| `--endpoint` | CSI gRPC endpoint | `unix://tmp/csi.sock` |
+| `--config-file` | Path to the XO credentials config file mounted in the pod | `/etc/xenorchestra/config.yaml` |
+| `--vdi-name-prefix` | Prefix prepended to the Kubernetes volume name when labelling VDIs in XO | `csi-` |
+| `--cluster-tag` | Tag added to every VDI at creation; `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. | `k8s-managed` |
+| `--node-metadata-source` | How the node plugin resolves the pool ID and VM identity: `kubernetes` (reads `spec.providerID`, requires CCM) or `xo-api` (queries XO directly) | `kubernetes` |

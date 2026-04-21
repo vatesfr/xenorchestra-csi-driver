@@ -113,12 +113,12 @@ func (driver *xenorchestraCSIDriver) NodePublishVolume(ctx context.Context, req 
 		return nil, status.Errorf(codes.Internal, "failed to create target path: %v", err)
 	}
 
-	notMnt, err := driver.mounter.IsMountPoint(targetPath)
+	alreadyMounted, err := driver.mounter.IsMountPoint(targetPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "check target path: %v", err)
 	}
 
-	if !notMnt {
+	if alreadyMounted {
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 

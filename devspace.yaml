@@ -1,6 +1,11 @@
 version: v2beta1
 name: tmp-xo-csi-git
 
+vars:
+  VDI_NAME_PREFIX:
+    source: env
+    default: 'dev-csi-'
+
 # This is a list of `pipelines` that DevSpace can execute (you can define your own)
 pipelines:
   # This is the pipeline for the main command: `devspace dev` (or `devspace run-pipeline dev`)
@@ -77,6 +82,9 @@ dev:
       - command: helm
       - gitCredentials: true
     # Forward the following ports to be able access your application via localhost
+    env:
+      - name: VDI_NAME_PREFIX
+        value: "${VDI_NAME_PREFIX}"
     ports:
       - port: "2345"
 
@@ -102,6 +110,9 @@ dev:
       - command: kubectl
       - command: helm
       - gitCredentials: true
+    env:
+      - name: VDI_NAME_PREFIX
+        value: "${VDI_NAME_PREFIX}"
     ports:
       - port: "2345"
 # Use the `commands` section to define repeatable dev workflows for this project 

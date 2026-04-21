@@ -5,6 +5,7 @@ PKG = github.com/vatesfr/xenorchestra-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 IMAGE_NAME ?= $(REGISTRY)/$(USERNAME)/xenorchestra-csi-driver
 PLUGIN_NAME = xenorchestra-csi
+VDI_NAME_PREFIX ?= csi-
 VERSION ?= $(shell git describe --dirty --tag --match='v*')
 TAG ?= $(VERSION)
 
@@ -90,10 +91,9 @@ release-update:
 unit: ## Unit Tests
 	go test -tags=unit $(shell go list ./...) $(TESTARGS)
 
-
 .PHONY: run
 run: ## Run the application
-	go run ./cmd/${PLUGIN_NAME} --v 5 --node-name $(KUBE_NODE_NAME) --endpoint=unix:///csi/csi.sock
+	go run ./cmd/${PLUGIN_NAME} --v 5 --node-name $(KUBE_NODE_NAME) --endpoint=unix:///csi/csi.sock --vdi-name-prefix=$(VDI_NAME_PREFIX)
 
 ############
 #
