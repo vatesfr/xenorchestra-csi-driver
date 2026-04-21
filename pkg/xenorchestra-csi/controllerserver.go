@@ -98,8 +98,8 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
 	}
 
-	if !isValidCapability(req.GetVolumeCapability()) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capability")
+	if err := isValidCapability(req.GetVolumeCapability()); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capability: %v", err)
 	}
 
 	// Volume ID is the VDI UUID
@@ -244,8 +244,8 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		return nil, status.Errorf(codes.InvalidArgument, "volume capabilities are required")
 	}
 
-	if !isValidVolumeCapabilities(capabilities) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capabilities")
+	if err := isValidVolumeCapabilities(capabilities); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capabilities: %v", err)
 	}
 
 	var capacityBytes int64
@@ -406,9 +406,44 @@ func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolum
 }
 
 // ValidateVolumeCapabilities implements Driver.
-func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(context.Context, *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
-	klog.Error("ValidateVolumeCapabilities is not implemented")
-	return nil, status.Error(codes.Unimplemented, "ValidateVolumeCapabilities is not implemented")
+func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+	klog.V(5).Info("ValidateVolumeCapabilities called", "request", req)
+
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
+	}
+
+	volumeID, err := uuid.FromString(req.GetVolumeId())
+	if err != nil || volumeID == uuid.Nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Volume ID must be a valid UUID")
+	}
+
+	if len(req.GetVolumeCapabilities()) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "At least one volume capability is required")
+	}
+
+	_, err = driver.xoClient.VDI().Get(ctx, volumeID)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, status.Errorf(codes.NotFound, "Volume %s not found", volumeID)
+		}
+		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "Failed to get VDI %s: %v", volumeID, err)
+	}
+
+	if err := isValidVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
+		return &csi.ValidateVolumeCapabilitiesResponse{
+			Message: err.Error(),
+		}, nil
+	}
+
+	return &csi.ValidateVolumeCapabilitiesResponse{
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeContext:      req.GetVolumeContext(),
+			VolumeCapabilities: req.GetVolumeCapabilities(),
+			Parameters:         req.GetParameters(),
+		},
+	}, nil
 }
 
 func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool) []*csi.Topology {

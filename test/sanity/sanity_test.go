@@ -23,11 +23,6 @@ const (
 	nodeName       = "sanity-node"
 )
 
-// skipPatterns lists test descriptions to skip because they require features not yet implemented
-var skipPatterns = []string{
-	"ValidateVolumeCapabilities",
-}
-
 type CustomIDGenerator struct{}
 
 var _ sanity.IDGenerator = &CustomIDGenerator{}
@@ -126,7 +121,6 @@ func TestSanity(t *testing.T) {
 	gomega.RegisterFailHandler(ginkgo.Fail)
 
 	suiteConfig, reporterConfig := ginkgo.GinkgoConfiguration()
-	suiteConfig.SkipStrings = skipPatterns
 
 	ginkgo.RunSpecs(t, "CSI Driver Sanity Suite", suiteConfig, reporterConfig)
 	sc.Finalize()
