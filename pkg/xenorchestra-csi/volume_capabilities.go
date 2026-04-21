@@ -24,20 +24,20 @@ const (
 	DefaultFsType = "ext4"
 )
 
-func isValidVolumeCapabilities(v []*csi.VolumeCapability) error {
+func validateVolumeCapabilities(v []*csi.VolumeCapability) error {
 	if len(v) == 0 {
 		return fmt.Errorf("at least one volume capability is required")
 	}
 
 	for _, c := range v {
-		if err := isValidCapability(c); err != nil {
+		if err := validateVolumeCapability(c); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func isValidCapability(c *csi.VolumeCapability) error {
+func validateVolumeCapability(c *csi.VolumeCapability) error {
 	if c == nil {
 		return fmt.Errorf("nil volume capability")
 	}

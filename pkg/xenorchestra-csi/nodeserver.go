@@ -75,7 +75,7 @@ func (driver *xenorchestraCSIDriver) NodePublishVolume(ctx context.Context, req 
 	if volCap == nil {
 		return nil, status.Error(codes.InvalidArgument, "volume capability missing in request")
 	}
-	if err := isValidVolumeCapabilities([]*csi.VolumeCapability{volCap}); err != nil {
+	if err := validateVolumeCapabilities([]*csi.VolumeCapability{volCap}); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capability: %v", err)
 	}
 

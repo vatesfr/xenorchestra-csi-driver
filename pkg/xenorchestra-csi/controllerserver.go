@@ -98,7 +98,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
 	}
 
-	if err := isValidCapability(req.GetVolumeCapability()); err != nil {
+	if err := validateVolumeCapability(req.GetVolumeCapability()); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capability: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		return nil, status.Errorf(codes.InvalidArgument, "volume capabilities are required")
 	}
 
-	if err := isValidVolumeCapabilities(capabilities); err != nil {
+	if err := validateVolumeCapabilities(capabilities); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capabilities: %v", err)
 	}
 
@@ -431,7 +431,7 @@ func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(ctx context.Cont
 		return nil, status.Errorf(codes.Internal, "Failed to get VDI %s: %v", volumeID, err)
 	}
 
-	if err := isValidVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
+	if err := validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return &csi.ValidateVolumeCapabilitiesResponse{
 			Message: err.Error(),
 		}, nil
