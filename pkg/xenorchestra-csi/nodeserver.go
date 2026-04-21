@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/gofrs/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -233,6 +234,27 @@ func (driver *xenorchestraCSIDriver) NodeStageVolume(ctx context.Context, req *c
 	if currentDevice == device {
 		klog.V(2).Info("NodeStageVolume: volume already staged", "device", device, "target", stagingTarget)
 		return &csi.NodeStageVolumeResponse{}, nil
+	}
+
+	// Verify the SR backing this VBD is connected to the host where the VM is running.
+	// XenOrchestra may report a VDI as attached and provide a device name, but if the SR
+	// is not connected to the XCP-ng host the block device will not appear in /dev/.
+	vbdIDStr := req.GetPublishContext()["vbd"]
+	if vbdIDStr == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "vbd is not set in publish context")
+	}
+	vbdID, err := uuid.FromString(vbdIDStr)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "vbd in publish context is not a valid UUID: %v", err)
+	}
+	if err := driver.xoClient.IsSRAttachedToVMHost(ctx, vbdID); err != nil {
+		return nil, status.Errorf(codes.Internal, "SR connectivity check failed for VBD %s: %v", vbdIDStr, err)
+	}
+
+	// Verify the device actually exists on this host before attempting to format/mount.
+	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
+		klog.ErrorS(err, "device does not exist on this host despite SR being connected", "devicePath", devicePath)
+		return nil, status.Errorf(codes.Internal, "device %s does not exist on this host despite SR being connected", devicePath)
 	}
 
 	// Format device if needed

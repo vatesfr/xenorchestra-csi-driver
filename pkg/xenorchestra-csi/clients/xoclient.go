@@ -44,6 +44,13 @@ type XoClient interface {
 	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
 	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
+	// IsSRAttachedToHost checks that the given SR is connected (via a plugged PBD) to the given host.
+	// Returns nil when the SR is reachable, or a descriptive error otherwise.
+	IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error
+	// IsSRAttachedToVMHost checks that the SR backing the given VBD is connected (via a plugged PBD)
+	// to the XCP-ng host where the VBD's VM is currently running.
+	// Returns nil when the SR is reachable, or a descriptive error otherwise.
+	IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error
 }
 
 type xoClient struct {
@@ -156,6 +163,45 @@ func (c xoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*
 	}
 
 	return vbds, nil
+}
+
+// IsSRAttachedToHost checks that the given SR is connected (via a plugged PBD) to the given host.
+func (c xoClient) IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error {
+	pbds, err := c.PBD().GetAll(ctx, 1, fmt.Sprintf("SR:%s host:%s", srID, hostID))
+	if err != nil {
+		return fmt.Errorf("failed to list PBDs for SR %s on host %s: %w", srID, hostID, err)
+	}
+	if len(pbds) == 0 {
+		return fmt.Errorf("SR %s has no PBD for host %s; the SR may not be shared with this host", srID, hostID)
+	}
+	if !pbds[0].Attached {
+		return fmt.Errorf("SR %s is not connected to host %s (PBD %s is unplugged)", srID, hostID, pbds[0].ID)
+	}
+	return nil
+}
+
+// IsSRAttachedToVMHost checks that the SR backing the given VBD is connected (via a plugged PBD)
+// to the XCP-ng host where the VBD's VM is currently running.
+func (c xoClient) IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error {
+	vbd, err := c.VBD().Get(ctx, vbdID)
+	if err != nil {
+		return fmt.Errorf("failed to get VBD %s: %w", vbdID, err)
+	}
+	if vbd.VDI == nil {
+		return fmt.Errorf("VBD %s has no VDI", vbdID)
+	}
+
+	vm, err := c.VM().GetByID(ctx, vbd.VM)
+	if err != nil {
+		return fmt.Errorf("failed to get VM %s for VBD %s: %w", vbd.VM, vbdID, err)
+	}
+
+	vdi, err := c.VDI().Get(ctx, *vbd.VDI)
+	if err != nil {
+		return fmt.Errorf("failed to get VDI %s: %w", vbd.VDI, err)
+	}
+
+	return c.IsSRAttachedToHost(ctx, vdi.SR, vm.Container)
 }
 
 func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
