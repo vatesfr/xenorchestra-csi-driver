@@ -24,22 +24,11 @@ const (
 )
 
 // skipPatterns lists test descriptions to skip because they require features not yet implemented
-// (CreateVolume, ValidateVolumeCapabilities).
 var skipPatterns = []string{
-	// Unimplemented features:
 	"ValidateVolumeCapabilities",
-	// Automatically skipped because not supported by the driver:
-	// "Snapshot",
-	// "ListVolumes",
-	// "ExpandVolume",
-	// "ModifyVolume",
-	// "GroupController",
-	// "NodeGetVolumeStats",
 }
 
-type CustomIDGenerator struct {
-	// Empty struct since no state is needed to generate IDs
-}
+type CustomIDGenerator struct{}
 
 var _ sanity.IDGenerator = &CustomIDGenerator{}
 
@@ -60,7 +49,7 @@ func (d CustomIDGenerator) GenerateInvalidNodeID() string {
 }
 
 func TestSanity(t *testing.T) {
-	fakeMounter := stub.NewStubMounter()
+	fakeMounter := NewFakeMounter()
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
 	driver, _ := NewFakeDriver(
 		t,

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package stub
+package sanity_test
 
 import (
 	"sync"
@@ -24,21 +24,21 @@ import (
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 )
 
-// StubMounter simulates filesystem operations in memory.
+// FakeMounter simulates filesystem operations in memory.
 // dirs tracks which target paths are currently "mounted".
-type StubMounter struct {
+type FakeMounter struct {
 	mu   sync.Mutex
 	dirs map[string]bool
 }
 
-func NewStubMounter() *StubMounter {
-	return &StubMounter{
+func NewFakeMounter() *FakeMounter {
+	return &FakeMounter{
 		dirs: make(map[string]bool),
 	}
 }
 
 // FormatAndMount simulates a format+mount by recording target as mounted.
-func (s *StubMounter) FormatAndMount(source, target, fstype string, options []string) error {
+func (s *FakeMounter) FormatAndMount(source, target, fstype string, options []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dirs[target] = true
@@ -46,7 +46,7 @@ func (s *StubMounter) FormatAndMount(source, target, fstype string, options []st
 }
 
 // Mount simulates a mount by recording target as mounted.
-func (s *StubMounter) Mount(source, target, fstype string, options []string) error {
+func (s *FakeMounter) Mount(source, target, fstype string, options []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dirs[target] = true
@@ -54,7 +54,7 @@ func (s *StubMounter) Mount(source, target, fstype string, options []string) err
 }
 
 // Unmount simulates an unmount by removing target from the in-memory map.
-func (s *StubMounter) Unmount(target string) error {
+func (s *FakeMounter) Unmount(target string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.dirs, target)
@@ -62,17 +62,17 @@ func (s *StubMounter) Unmount(target string) error {
 }
 
 // FindDevicePath returns a fake device path, mirroring the real SafeMounter behavior.
-func (s *StubMounter) FindDevicePath(deviceName string, vbdUUID string) (string, error) {
+func (s *FakeMounter) FindDevicePath(deviceName string, vbdUUID string) (string, error) {
 	return "/dev/" + deviceName, nil
 }
 
 // GetDeviceNameFromMount returns a non-empty device name
-func (s *StubMounter) GetDeviceNameFromMount(mountPath string) (string, int, error) {
+func (s *FakeMounter) GetDeviceNameFromMount(mountPath string) (string, int, error) {
 	return "/dev/xvdc", 0, nil
 }
 
 // IsMountPoint reports whether target is currently tracked as mounted.
-func (s *StubMounter) IsMountPoint(target string) (bool, error) {
+func (s *FakeMounter) IsMountPoint(target string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if mounted, ok := s.dirs[target]; ok {
@@ -82,7 +82,7 @@ func (s *StubMounter) IsMountPoint(target string) (bool, error) {
 }
 
 // CheckPath checks if a path exists in the mounted directories.
-func (s *StubMounter) CheckPath(path string) (csisanity.PathKind, error) {
+func (s *FakeMounter) CheckPath(path string) (csisanity.PathKind, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.dirs[path]; ok {
@@ -92,4 +92,4 @@ func (s *StubMounter) CheckPath(path string) (csisanity.PathKind, error) {
 }
 
 // Compile time check to ensure StubMounter implements the Mounter interface
-var _ clients.Mounter = &StubMounter{}
+var _ clients.Mounter = &FakeMounter{}
