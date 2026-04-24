@@ -43,7 +43,7 @@ spec:
       imagePullSecrets:
         - name: regcred
       containers:
-        # TODO: Add provisioner, attacher, resizer, snapshotter implementation when ready
+        # TODO: Add resizer, snapshotter implementation when ready
         - name: liveness-probe
           image: registry.k8s.io/sig-storage/livenessprobe:v2.18.0
           args:
@@ -133,6 +133,20 @@ spec:
             initialDelaySeconds: 10
             timeoutSeconds: 10
             periodSeconds: 20
+        - name: csi-provisioner
+          image: registry.k8s.io/sig-storage/csi-provisioner:v6.2.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            # - "--leader-election"
+            - "--http-endpoint=:8081"
+            - "--retry-interval-max=30s"
+            - "--timeout=10m"
+            - "--default-fstype=ext4"
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
       volumes:
         - name: socket-dir
           emptyDir: {}
