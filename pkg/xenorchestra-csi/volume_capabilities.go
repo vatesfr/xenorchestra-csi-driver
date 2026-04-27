@@ -15,50 +15,47 @@
 package xenorchestracsi
 
 import (
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	"fmt"
 
-	"k8s.io/klog/v2"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 )
 
 const (
 	DefaultFsType = "ext4"
 )
 
-func isValidVolumeCapabilities(v []*csi.VolumeCapability) bool {
+func validateVolumeCapabilities(v []*csi.VolumeCapability) error {
 	if len(v) == 0 {
-		return false
+		return fmt.Errorf("at least one volume capability is required")
 	}
 
 	for _, c := range v {
-		if !isValidCapability(c) {
-			return false
+		if err := validateVolumeCapability(c); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
 }
 
-func isValidCapability(c *csi.VolumeCapability) bool {
+func validateVolumeCapability(c *csi.VolumeCapability) error {
 	if c == nil {
-		return false
+		return fmt.Errorf("nil volume capability")
 	}
 
 	switch c.GetAccessType().(type) {
 	case *csi.VolumeCapability_Block:
-		klog.V(2).InfoS("isValidCapability: block access type is not supported")
-		return false
+		return fmt.Errorf("block access type is not supported")
 	case *csi.VolumeCapability_Mount:
 		// Continue
 	default:
-		klog.V(2).InfoS("isValidCapability: unknown access type", "accessType", c.GetAccessType())
-		return false
+		return fmt.Errorf("unknown access type %T", c.GetAccessType())
 	}
 
 	accessMode := c.GetAccessMode().GetMode()
 	switch accessMode {
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
-		return true
+		return nil
 	default:
-		klog.V(2).InfoS("isValidCapability: access mode is not supported", "accessMode", accessMode)
-		return false
+		return fmt.Errorf("access mode %s is not supported", accessMode)
 	}
 }
