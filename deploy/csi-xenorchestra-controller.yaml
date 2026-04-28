@@ -53,9 +53,6 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
-            - mountPath: /etc/xo-config
-              name: xo-cloud-config
-              readOnly: true
           resources:
             limits:
               memory: 100Mi
@@ -110,8 +107,7 @@ spec:
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
-            - "--http-endpoint=:8080"
-            - "--leader-election"
+            - "--http-endpoint=:29605"
           env:
             - name: MY_NAME
               valueFrom:
@@ -121,15 +117,11 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
-          ports:
-            - containerPort: 8080
-              name: http-endpoint
-              protocol: TCP
           livenessProbe:
             failureThreshold: 1
             httpGet:
-              path: /healthz/leader-election
-              port: http-endpoint
+              path: /metrics
+              port: 29605
             initialDelaySeconds: 10
             timeoutSeconds: 10
             periodSeconds: 20
@@ -138,12 +130,16 @@ spec:
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
-            # - "--leader-election"
-            - "--http-endpoint=:8081"
-            - "--retry-interval-max=30s"
-            - "--timeout=10m"
-            - "--default-fstype=ext4"
+            - "--http-endpoint=:29606"
           imagePullPolicy: "IfNotPresent"
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /metrics
+              port: 29606
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
