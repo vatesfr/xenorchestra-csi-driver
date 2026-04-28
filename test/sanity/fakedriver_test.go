@@ -50,6 +50,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 		Device: &device,
 	}, nil).AnyTimes()
 	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockXoClient.EXPECT().IsSRAttachedToHost(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	return xenorchestracsi.NewDriverWithDependencies(
 		options,

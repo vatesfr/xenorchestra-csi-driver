@@ -29,6 +29,7 @@ import (
 
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
+	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
 	"k8s.io/klog/v2"
 )
@@ -134,6 +135,13 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolID, nodeVM.PoolID)
 	}
 
+	// Verify the SR is reachable from the host where the VM is running before attempting
+	// to attach or connect any VBD.
+	if err := driver.xoClient.IsSRAttachedToHost(ctx, vdi.SR, nodeVM.Container); err != nil {
+		klog.ErrorS(err, "SR is not attached to VM host", "srID", vdi.SR, "hostID", nodeVM.Container, "vmUUID", vmUUID)
+		return nil, status.Errorf(codes.FailedPrecondition, "SR is not attached to the VM host: %v", err)
+	}
+
 	// Check the VDI is not already attached to another VM
 	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, vdi)
 	if err != nil {
@@ -167,6 +175,15 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 				}, nil
 			}
 			klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
+			if vbdToAttach.Device == nil {
+				klog.ErrorS(nil, "Device name is not yet assigned to the VBD, waiting...", "vbd", vbdToAttach)
+				vbdToAttach, err = driver.xoClient.WaitForVDIToBeFullyAttached(ctx, vbdToAttach.ID)
+				if err != nil {
+					klog.ErrorS(err, "Failed to wait for VBD to be fully attached", "vbd", vbdToAttach)
+					return nil, status.Errorf(codes.Internal, "Failed to wait for VBD to be fully attached: %v", err)
+				}
+				klog.V(5).InfoS("VBD is now fully attached with device name assigned", "vbd", vbdToAttach)
+			}
 			return &csi.ControllerPublishVolumeResponse{
 				PublishContext: publishContextFromVBD(*vbdToAttach),
 			}, nil
@@ -450,8 +467,8 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 	return []*csi.Topology{
 		{
 			Segments: map[string]string{
-				"pool": pool.ID.String(),
-				"sr":   pool.DefaultSR.String(),
+				xok8s.XOLabelTopologyPoolID:       pool.ID.String(),
+				"topology.k8s.xenorchestra/sr_id": pool.DefaultSR.String(),
 			},
 		},
 	}

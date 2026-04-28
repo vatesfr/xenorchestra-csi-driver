@@ -117,6 +117,20 @@ func (mr *MockXoClientMockRecorder) Host() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Host", reflect.TypeOf((*MockXoClient)(nil).Host))
 }
 
+// IsSRAttachedToVMHost mocks base method.
+func (m *MockXoClient) IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsSRAttachedToVMHost", ctx, vbdID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IsSRAttachedToVMHost indicates an expected call of IsSRAttachedToVMHost.
+func (mr *MockXoClientMockRecorder) IsSRAttachedToVMHost(ctx, vbdID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSRAttachedToVMHost", reflect.TypeOf((*MockXoClient)(nil).IsSRAttachedToVMHost), ctx, vbdID)
+}
+
 // IsVDIUsedAnywhere mocks base method.
 func (m *MockXoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error) {
 	m.ctrl.T.Helper()
@@ -130,6 +144,20 @@ func (m *MockXoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI)
 func (mr *MockXoClientMockRecorder) IsVDIUsedAnywhere(ctx, vdi any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsVDIUsedAnywhere", reflect.TypeOf((*MockXoClient)(nil).IsVDIUsedAnywhere), ctx, vdi)
+}
+
+// IsSRAttachedToHost mocks base method.
+func (m *MockXoClient) IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsSRAttachedToHost", ctx, srID, hostID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IsSRAttachedToHost indicates an expected call of IsSRAttachedToHost.
+func (mr *MockXoClientMockRecorder) IsSRAttachedToHost(ctx, srID, hostID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSRAttachedToHost", reflect.TypeOf((*MockXoClient)(nil).IsSRAttachedToHost), ctx, srID, hostID)
 }
 
 // PBD mocks base method.
