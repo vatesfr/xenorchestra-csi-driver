@@ -71,6 +71,7 @@ spec:
             - "--endpoint=unix:///csi/csi.sock"
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
+            - "--cluster-tag=k8s-managed"
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
