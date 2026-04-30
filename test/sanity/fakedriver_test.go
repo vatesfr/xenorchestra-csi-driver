@@ -36,11 +36,13 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 	mockPool := newMockPool(ctrl)
 	mockVDI := newMockVDI(ctrl)
 	mockVM := newMockVM(ctrl)
+	mockSR := newMockSR(ctrl)
 
 	mockXoClient := clientsMock.NewMockXoClient(ctrl)
 	mockXoClient.EXPECT().Pool().Return(mockPool).AnyTimes()
 	mockXoClient.EXPECT().VDI().Return(mockVDI).AnyTimes()
 	mockXoClient.EXPECT().VM().Return(mockVM).AnyTimes()
+	mockXoClient.EXPECT().SR().Return(mockSR).AnyTimes()
 
 	// IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 	mockXoClient.EXPECT().IsVDIUsedAnywhere(gomock.Any(), gomock.Any()).Return([]*payloads.VBD{}, nil).AnyTimes()
@@ -83,7 +85,7 @@ func newMockPool(ctrl *gomock.Controller) *xoLibMock.MockPool {
 			return &payloads.Pool{
 				ID:        id,
 				NameLabel: "fake-pool",
-				DefaultSR: uuid.Must(uuid.NewV4()),
+				DefaultSR: uuid.FromStringOrNil(stub.DefaultSRId),
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such Pool %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"Pool\"\n  }\n}", id, id)
@@ -141,4 +143,19 @@ func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 	}).AnyTimes()
 
 	return mockVDI
+}
+
+func newMockSR(ctrl *gomock.Controller) *xoLibMock.MockSR {
+	mockSR := xoLibMock.NewMockSR(ctrl)
+	mockSR.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, id uuid.UUID) (*payloads.StorageRepository, error) {
+		if id == uuid.FromStringOrNil(stub.DefaultSRId) {
+			return &payloads.StorageRepository{
+				ID:        id,
+				NameLabel: "fake-sr",
+				Type:      "nfs",
+			}, nil
+		}
+		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such SR %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"SR\"\n  }\n}", id, id)
+	}).AnyTimes()
+	return mockSR
 }

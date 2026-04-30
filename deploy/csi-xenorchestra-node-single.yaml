@@ -86,6 +86,7 @@ spec:
             # kubernetes (default): reads from node labels set by the XenOrchestra CCM.
             # xo-api: queries the XenOrchestra API directly; use when CCM is not installed.
             - "--node-metadata-source=kubernetes"
+            - "--cluster-tag=k8s-managed"
           ports:
             - containerPort: 29603
               name: healthz

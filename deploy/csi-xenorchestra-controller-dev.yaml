@@ -73,6 +73,7 @@ spec:
             - "--endpoint=unix:///csi/csi.sock"
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
+            - "--cluster-tag=k8s-managed"
           ports:
             - containerPort: 29602
               name: healthz

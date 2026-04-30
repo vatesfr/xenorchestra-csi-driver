@@ -185,8 +185,14 @@ Choose the provisioning mode that suits your use case.
 #### Dynamic provisioning (recommended)
 
 The driver creates a VDI automatically when a PVC is bound.
-The `poolId` parameter is **required**: it identifies the Xen Orchestra pool whose
-**default SR** will be used to store the new VDI.
+Two modes are available depending on whether you want to pin provisioning to a
+specific pool or let the scheduler decide.
+
+##### Explicit pool
+
+Set `poolId` in the StorageClass parameters. The driver always provisions into
+that pool's default SR. The `poolId` is validated against the pod's topology
+requirements at provision time — an error is returned if they are incompatible.
 
 ```bash
 kubectl apply -f examples/csi-sc-dynamic.yaml
@@ -209,6 +215,34 @@ parameters:
 > **How to find the pool UUID in Xen Orchestra:**
 > In the XO web UI, open the pool and copy the UUID from the URL or the pool detail page.
 > Alternatively: `xo-cli xo.getAllObjects filter='{"type":"pool"}' | jq '.[].id'`
+
+##### Topology-aware (no poolId)
+
+Omit `poolId` entirely. The driver selects the pool automatically from the
+`accessibility_requirements` passed by the Kubernetes scheduler, following the
+CSI spec ordering: **preferred topologies first**, then **requisite topologies**
+as fallback. The first pool whose default SR is accessible is used.
+
+This mode requires:
+- `volumeBindingMode: WaitForFirstConsumer` — so the scheduler picks a node
+  (and therefore a pool topology) before provisioning begins.
+- Nodes labelled with `topology.k8s.xenorchestra/pool_id` — set automatically
+  by the CCM or the CSI node plugin's `NodeGetInfo`.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-topology
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+# no parameters block required
+```
+
+See [Topology and Placement](topology.md) for a detailed explanation of how pool
+selection works in each mode.
 
 #### Static provisioning (pre-existing VDI)
 
@@ -235,8 +269,10 @@ allowVolumeExpansion: false
 ## Dynamic volume provisioning
 
 The driver creates a VDI in XenOrchestra when Kubernetes binds a PVC to a pod.
-The target SR is always the pool's **default SR**, selected via `poolId` in the
-StorageClass.
+The target SR is always the pool's **default SR**. The pool is either specified
+explicitly via `poolId` in the StorageClass, or selected automatically from the
+`accessibility_requirements` topology hints passed by the scheduler (see
+[Topology and Placement](topology.md) for the full selection logic).
 
 ### 1. Create the StorageClass
 
@@ -375,7 +411,7 @@ csi.xenorchestra.vates.tech
 
 | Parameter | Description | Required | Example |
 | --------- | ----------- | -------- | ------- |
-| `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | **Yes** | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
+| `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. If omitted, the pool is selected automatically from `accessibility_requirements` (topology-aware mode). | No | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
 
 ### Driver startup flags
 

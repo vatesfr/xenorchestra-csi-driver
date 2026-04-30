@@ -75,7 +75,7 @@ spec:
                 - ALL
         - name: xenorchestra-csi-driver
           image: ghcr.io/vatesfr/xenorchestra-csi-driver:edge
-          imagePullPolicy: Always # TODO: Change to IfNotPresent for prod
+          imagePullPolicy: IfNotPresent
           args:
             - "--v=5"
             - "--endpoint=unix:///csi/csi.sock"
@@ -85,6 +85,7 @@ spec:
             # kubernetes (default): reads from node labels set by the XenOrchestra CCM.
             # xo-api: queries the XenOrchestra API directly; use when CCM is not installed.
             - "--node-metadata-source=kubernetes"
+            - "--cluster-tag=k8s-managed"
           ports:
             - containerPort: 29603
               name: healthz
