@@ -1,0 +1,71 @@
+# Example: Topology-aware dynamic volume provisioning (no poolId)
+#
+# The StorageClass has no `poolId` parameter. The driver selects the pool
+# automatically from the accessibility_requirements passed by the CO
+# (external-provisioner), following the CSI spec ordering:
+#   1. Preferred topologies first (in order).
+#   2. Requisite topologies as fallback.
+# The first pool whose default SR is accessible is used.
+#
+# When to use:
+#   - Multi-pool clusters where you want one StorageClass for all pools.
+#   - You want the scheduler (via pod affinity) to drive storage placement.
+#
+# Requirements:
+#   - volumeBindingMode: WaitForFirstConsumer  (so a node is picked first)
+#   - Nodes must carry the topology.k8s.xenorchestra/pool_id label
+#     (set by the XenOrchestra CCM or the CSI node plugin's NodeGetInfo).
+#
+# Replace <xo-pool-uuid> with the pool UUID you want the pod to run on.
+#
+# Apply: kubectl apply -f csi-app-topology-aware.yaml
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xo-sc-topology-aware
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+
+# No parameters block — pool is selected from accessibility_requirements.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-pvc-topology-aware
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: xo-sc-topology-aware
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: xo-app-topology-aware
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions:
+              - key: topology.k8s.xenorchestra/pool_id
+                operator: In
+                values:
+                  - "<xo-pool-uuid>"
+  containers:
+    - name: app
+      image: busybox
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+      volumeMounts:
+        - mountPath: /data
+          name: storage
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: xo-pvc-topology-aware
