@@ -41,4 +41,20 @@ const (
 	// VDIOtherConfigKeyCreatedBy is the key in VDI's other_config map that identifies
 	// the component that created the VDI (always set to the driver name).
 	VDIOtherConfigKeyCreatedBy = "createdBy"
+
+	// VolumeContextKeySRID is the key in the PV's volumeAttributes (CSI VolumeContext)
+	// that stores the UUID of the Xen Orchestra Storage Repository backing the VDI.
+	VolumeContextKeySRID = "srId"
+
+	// VolumeContextKeySRName is the key in the PV's volumeAttributes (CSI VolumeContext)
+	// that stores the human-readable name of the Xen Orchestra Storage Repository.
+	VolumeContextKeySRName = "srName"
+
+	// VolumeContextKeyPoolID is the key in the PV's volumeAttributes (CSI VolumeContext)
+	// that stores the UUID of the Xen Orchestra pool the VDI belongs to.
+	VolumeContextKeyPoolID = "poolId"
+
+	// VolumeContextKeyPoolName is the key in the PV's volumeAttributes (CSI VolumeContext)
+	// that stores the human-readable name of the Xen Orchestra pool.
+	VolumeContextKeyPoolName = "poolName"
 )

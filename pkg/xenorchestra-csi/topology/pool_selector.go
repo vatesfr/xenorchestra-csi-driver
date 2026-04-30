@@ -111,13 +111,14 @@ func ValidatePoolIDAgainstRequisite(ar *csi.TopologyRequirement, poolID uuid.UUI
 // ErrPoolNotViable is returned when a pool's default SR is not accessible.
 var ErrPoolNotViable = errors.New("pool not viable")
 
-// SelectPool iterates the ordered pool UUIDs (as returned by OrderedPoolIDs)
-// and returns the first pool whose default SR exists and is accessible.
+// SelectPoolAndStorage iterates the ordered pool UUIDs (as returned by OrderedPoolIDs)
+// and returns the first pool whose default SR exists and is accessible, along
+// with the SR object itself.
 //
 // Per the CSI spec the preferred topologies are tried first (they come first
 // in the orderedPoolIDs list), then the requisite topologies as fallback.
 // If no viable pool is found, a RESOURCE_EXHAUSTED error is returned.
-func SelectPool(ctx context.Context, srClient library.SR, poolClient library.Pool, orderedPoolIDs []uuid.UUID) (*payloads.Pool, error) {
+func SelectPoolAndStorage(ctx context.Context, srClient library.SR, poolClient library.Pool, orderedPoolIDs []uuid.UUID) (*payloads.Pool, *payloads.StorageRepository, error) {
 	var lastErr error
 
 	for _, poolID := range orderedPoolIDs {
@@ -146,8 +147,8 @@ func SelectPool(ctx context.Context, srClient library.SR, poolClient library.Poo
 		// TODO: check that the SR has enough free space to create the requested VDI
 		// (sr.Size - sr.Usage >= capacityBytes).
 
-		return pool, nil
+		return pool, sr, nil
 	}
 
-	return nil, fmt.Errorf("%w: no viable pool found among candidates: %v", ErrPoolNotViable, lastErr)
+	return nil, nil, fmt.Errorf("%w: no viable pool found among candidates: %v", ErrPoolNotViable, lastErr)
 }

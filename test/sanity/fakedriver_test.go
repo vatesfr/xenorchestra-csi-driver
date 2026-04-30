@@ -150,8 +150,9 @@ func newMockSR(ctrl *gomock.Controller) *xoLibMock.MockSR {
 	mockSR.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, id uuid.UUID) (*payloads.StorageRepository, error) {
 		if id == uuid.FromStringOrNil(stub.DefaultSRId) {
 			return &payloads.StorageRepository{
-				ID:   id,
-				Type: "nfs",
+				ID:        id,
+				NameLabel: "fake-sr",
+				Type:      "nfs",
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such SR %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"SR\"\n  }\n}", id, id)

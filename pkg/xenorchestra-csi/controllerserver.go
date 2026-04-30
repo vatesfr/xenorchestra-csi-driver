@@ -292,6 +292,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	ar := req.GetAccessibilityRequirements()
 
 	var pool *payloads.Pool
+	var sr *payloads.StorageRepository
 
 	if hasPoolParam && poolIDStr != "" {
 		// Case 1: explicit poolId in StorageClass.
@@ -302,7 +303,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		if err := topology.ValidatePoolIDAgainstRequisite(ar, poolUUID); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 		}
-		pool, err = topology.SelectPool(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), []uuid.UUID{poolUUID})
+		pool, sr, err = topology.SelectPoolAndStorage(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), []uuid.UUID{poolUUID})
 		if err != nil {
 			klog.ErrorS(err, "Pool or SR not viable", "poolID", poolUUID)
 			return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
@@ -317,7 +318,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 				"parameter %q is required when accessibility_requirements carry no pool topology: %v",
 				ParameterPoolID, err)
 		}
-		pool, err = topology.SelectPool(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), orderedPoolIDs)
+		pool, sr, err = topology.SelectPoolAndStorage(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), orderedPoolIDs)
 		if err != nil {
 			klog.ErrorS(err, "No viable pool found in accessibility_requirements")
 			return nil, status.Errorf(codes.ResourceExhausted, "%v", err)
@@ -325,7 +326,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		klog.V(5).InfoS("No poolId parameter, selected pool from accessibility_requirements", "poolID", pool.ID)
 	}
 
-	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
+	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", sr.ID)
 
 	existingVDIs, err := driver.xoClient.VDI().GetAll(ctx, 1, fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyPVName, volumeName))
 	if err != nil {
@@ -343,12 +344,13 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 				VolumeId:           existingVDI.ID.String(),
 				CapacityBytes:      capacityBytes,
 				AccessibleTopology: driver.buildAccessibleTopology(pool),
+				VolumeContext:      buildVolumeContext(pool, sr),
 			},
 		}, nil
 	}
 
 	vdiParams := payloads.VDICreateParams{
-		SRId:            pool.DefaultSR,
+		SRId:            sr.ID,
 		NameLabel:       diskName,
 		VirtualSize:     capacityBytes,
 		NameDescription: "VDI managed by the Kubernetes CSI",
@@ -372,6 +374,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			VolumeId:           vdiID.String(),
 			CapacityBytes:      capacityBytes,
 			AccessibleTopology: driver.buildAccessibleTopology(pool),
+			VolumeContext:      buildVolumeContext(pool, sr),
 		},
 	}, nil
 }
@@ -499,6 +502,15 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 				xok8s.XOLabelTopologyPoolID: pool.ID.String(),
 			},
 		},
+	}
+}
+
+func buildVolumeContext(pool *payloads.Pool, sr *payloads.StorageRepository) map[string]string {
+	return map[string]string{
+		VolumeContextKeySRID:     sr.ID.String(),
+		VolumeContextKeySRName:   sr.NameLabel,
+		VolumeContextKeyPoolID:   pool.ID.String(),
+		VolumeContextKeyPoolName: pool.NameLabel,
 	}
 }
 
