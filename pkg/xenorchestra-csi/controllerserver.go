@@ -467,8 +467,7 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 	return []*csi.Topology{
 		{
 			Segments: map[string]string{
-				xok8s.XOLabelTopologyPoolID:       pool.ID.String(),
-				"topology.k8s.xenorchestra/sr_id": pool.DefaultSR.String(),
+				xok8s.XOLabelTopologyPoolID: pool.ID.String(),
 			},
 		},
 	}
