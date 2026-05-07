@@ -35,8 +35,10 @@ kxo() {
     echo "       kxo delete-secret"
     echo ""
     echo "Environment variables:"
-    echo "  IMAGE  Override the driver container image on apply"
-    echo "         e.g. IMAGE=<node-ip>:32000/vatesfr/xenorchestra-csi-driver:dev kxo apply node"
+    echo "  IMAGE        Override the driver container image on apply"
+    echo "               e.g. IMAGE=<node-ip>:32000/vatesfr/xenorchestra-csi-driver:dev kxo apply node"
+    echo "  CLUSTER_TAG  Override the --cluster-tag arg (default: \$USER)"
+    echo "               e.g. CLUSTER_TAG=k8s-prod kxo apply controller"
     echo ""
     echo "Available manifests:"
     for key in "${(@k)K_MANIFESTS}"; do
@@ -96,11 +98,11 @@ kxo() {
     # Execute kubectl command
     case "$cmd" in
       apply|a)
-        if [[ -n "${IMAGE:-}" ]]; then
-          sed "s|image: .*xenorchestra-csi-driver.*|image: ${IMAGE}|g" "$manifest_file" | kubectl apply -f -
-        else
-          kubectl apply -f "$manifest_file"
-        fi
+        local _cluster_tag="${CLUSTER_TAG:-k8s-managed-$USER}"
+        sed \
+          -e "s|image: .*xenorchestra-csi-driver.*|image: ${IMAGE:-&}|g" \
+          -e "s|\"--cluster-tag=[^\"]*\"|\"--cluster-tag=${_cluster_tag}\"|g" \
+          "$manifest_file" | kubectl apply -f -
         ;;
       delete|d)
         kubectl delete -f "$manifest_file"

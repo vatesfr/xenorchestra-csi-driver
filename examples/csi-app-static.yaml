@@ -1,0 +1,57 @@
+---
+# Static provisioning: manually bind an existing XO VDI to a Kubernetes workload.
+#
+# Prerequisites:
+#   - A StorageClass named "csi-xenorchestra-sc" (see csi-storageclass.yaml)
+#   - An existing VDI in Xen Orchestra — replace the volumeHandle below with its UUID
+#
+# Apply with:
+#   kubectl apply -f csi-app-static.yaml
+#
+# The PV references the VDI directly via its UUID.  The PVC binds to the PV by
+# name (volumeName), bypassing dynamic provisioning entirely.
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: xo-static-pv
+spec:
+  storageClassName: csi-xenorchestra-sc # defined in csi-storageclass.yaml
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: csi.xenorchestra.vates.tech
+    volumeHandle: "<xo-vdi-uuid>" # replace with the VDI UUID
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-static-pvc
+spec:
+  storageClassName: csi-xenorchestra-sc # must match the PV storageClassName
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  volumeName: xo-static-pv # bind explicitly to the PV above
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: xo-static-app
+spec:
+  containers:
+    - name: app
+      image: busybox
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+      volumeMounts:
+        - mountPath: "/data"
+          name: xo-static-volume
+  volumes:
+    - name: xo-static-volume
+      persistentVolumeClaim:
+        claimName: xo-static-pvc

@@ -146,3 +146,58 @@ scope and can be updated freely without affecting the CSI node pod.
 This is the correct separation of concerns:
 - **NDR / CSI topology** — immutable pool boundary.
 - **CCM labels** — live, informational node metadata that can change at any time.
+
+## Pool selection in CreateVolume
+
+The driver supports two StorageClass configurations that affect how these hints
+are used:
+
+### Explicit `poolId` (simple mode)
+
+```yaml
+parameters:
+  poolId: "<xo-pool-uuid>"
+```
+
+The driver uses the given pool directly. Before provisioning it validates that
+`poolId` appears in at least one `requisite` topology entry. If the `poolId` is
+absent from all requisite topologies the call fails with `InvalidArgument` —
+the StorageClass and the pod's node affinity are incompatible and the volume
+would never be schedulable.
+
+After validation the driver checks that the pool's default SR is reachable (not
+in maintenance mode) before creating the VDI.
+
+### Topology-aware mode (no `poolId`)
+
+```yaml
+# no parameters block required
+```
+
+The driver derives the target pool entirely from `accessibility_requirements`:
+
+1. Iterates the **preferred** topology list in order.
+2. For each candidate pool: fetches the pool, checks that a default SR is
+   configured, fetches the SR, and checks it is not in maintenance mode.
+3. The first viable pool is used.
+4. If no preferred pool is viable, repeats steps 2–3 for the **requisite** list.
+5. If no requisite pool is viable either, returns `ResourceExhausted`.
+
+This mode requires `volumeBindingMode: WaitForFirstConsumer` so that the
+scheduler picks a node (and therefore a pool topology) before provisioning
+begins. It also requires nodes to carry the
+`topology.k8s.xenorchestra/pool_id` label, which is set by the CCM or the CSI
+node plugin's `NodeGetInfo` call.
+
+> **Future improvement:** the driver will additionally verify that the selected
+> SR has sufficient free space for the requested volume size before committing
+> to it (currently a TODO in `pkg/xenorchestra-csi/topology/pool_selector.go`).
+
+### Summary
+
+| StorageClass `poolId` | `accessibility_requirements` present | Behaviour |
+| --------------------- | ------------------------------------ | --------- |
+| Set | No | Provision into `poolId`, verify SR accessible |
+| Set | Yes | Validate `poolId` ∈ requisite topologies, then verify SR accessible |
+| Absent | Yes | Select first viable pool from preferred → requisite order |
+| Absent | No | `InvalidArgument` — not enough information to pick a pool |

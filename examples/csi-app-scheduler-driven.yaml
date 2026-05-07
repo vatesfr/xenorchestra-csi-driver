@@ -1,0 +1,63 @@
+# Example: Fully scheduler-driven placement (no poolId, no node affinity)
+#
+# Neither the StorageClass nor the pod specifies a pool or node constraint.
+# The Kubernetes scheduler picks any available node, then passes all
+# eligible pool topologies to CreateVolume via accessibility_requirements.
+# The driver provisions the VDI in the first pool with an accessible SR.
+#
+# The resulting PV carries a nodeAffinity for the provisioned pool, so
+# subsequent pod restarts are always scheduled on a node that can access
+# the volume.
+#
+# When to use:
+#   - You don't care which pool or node the workload runs on.
+#   - You want Kubernetes to handle all placement decisions automatically.
+#
+# Requirements:
+#   - volumeBindingMode: WaitForFirstConsumer  (so a node is picked first)
+#   - Nodes must carry the topology.k8s.xenorchestra/pool_id label
+#     (set by the XenOrchestra CCM or the CSI node plugin's NodeGetInfo).
+#
+# Apply: kubectl apply -f csi-app-scheduler-driven.yaml
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xo-sc-scheduler-driven
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+
+# No parameters block — pool is selected from accessibility_requirements.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-pvc-scheduler-driven
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: xo-sc-scheduler-driven
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: xo-app-scheduler-driven
+spec:
+  # No node affinity — the scheduler picks any available node.
+  # The CSI driver follows by provisioning in whatever pool that node belongs to.
+  containers:
+    - name: app
+      image: busybox
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+      volumeMounts:
+        - mountPath: /data
+          name: storage
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: xo-pvc-scheduler-driven

@@ -89,13 +89,19 @@ Name | Meaning | Example | Required | Default
 
 ### Dynamic provisioning
 
-Set `poolId` in the `StorageClass.parameters` block. The driver creates a new VDI
-in the pool's **default SR** each time a PVC is bound.
+The driver creates a new VDI in a pool's **default SR** each time a PVC is bound.
+Two modes are supported:
 > [Get an example](./examples/csi-sc-dynamic.yaml)
+
+#### Explicit pool (simple)
+
+Set `poolId` in `StorageClass.parameters`. The driver always provisions into that pool.
+The `poolId` is validated against the pod's topology requirements at provision time —
+an error is returned if they are incompatible.
 
 Name | Meaning | Example | Required | Default
 --- | --- | --- | --- | ---
-`poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | **Yes** | N/A
+`poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | No | —
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -108,6 +114,28 @@ volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: false
 parameters:
   poolId: "<xo-pool-uuid>"
+```
+
+#### Topology-aware (no poolId)
+
+Omit `poolId` entirely. The driver selects the pool automatically from the
+`accessibility_requirements` passed by the Kubernetes scheduler, following the
+CSI spec ordering: **preferred topologies first**, then **requisite topologies**
+as fallback. The first pool whose default SR is accessible is used.
+
+This mode requires `volumeBindingMode: WaitForFirstConsumer` and nodes labelled
+with `topology.k8s.xenorchestra/pool_id` (set by the CCM or the CSI node plugin).
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-topology
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+# no parameters block required
 ```
 
 
@@ -146,8 +174,10 @@ parameters:
 
 ### XO related
 - [x] Pool selection via `StorageClass.parameters.poolId`
+- [x] Topology-aware pool selection from `accessibility_requirements` (no `poolId` required)
+- [x] `poolId` validation against `accessibility_requirements` requisite topologies
+- [x] `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — `AccessibleTopology` returned in `CreateVolumeResponse`, topology requirements honoured in `CreateVolumeRequest`
 - [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
-- [ ] Implement `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — required to legally return `AccessibleTopology` in `CreateVolumeResponse` and to receive topology requirements in `CreateVolumeRequest`
 - [ ] Cluster Topology support
 - [ ] Multi-SR support (migration...)
 - [ ] Multi-pool support

@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/topology"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xok8s "github.com/vatesfr/xenorchestra-k8s-common"
 
@@ -276,27 +277,56 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	diskName := driver.vdiNamePrefix + volumeName
 	klog.V(5).InfoS("Creating volume", "diskName", diskName, "capacityBytes", capacityBytes)
 
-	// Resolve pool from StorageClass parameters.
+	// Resolve which pool to provision into.
+	//
+	// Two cases:
+	//   1. StorageClass has an explicit poolId parameter → validate it against
+	//      accessibility_requirements requisite topologies if present (a VDI is
+	//      only accessible within its pool), then verify its SR is accessible.
+	//   2. No poolId parameter → derive the pool from accessibility_requirements
+	//      by trying preferred topologies first (in order), then requisite as
+	//      fallback, picking the first pool whose SR is accessible.
+	//      If neither poolId nor accessibility_requirements are present, error.
 	params := req.GetParameters()
-	poolIDStr, ok := params[ParameterPoolID]
-	if !ok || poolIDStr == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "parameter %q is required", ParameterPoolID)
-	}
-	poolUUID, err := uuid.FromString(poolIDStr)
-	if err != nil || poolUUID == uuid.Nil {
-		return nil, status.Errorf(codes.InvalidArgument, "parameter %q must be a valid UUID, got %q", ParameterPoolID, poolIDStr)
+	poolIDStr, hasPoolParam := params[ParameterPoolID]
+	ar := req.GetAccessibilityRequirements()
+
+	var pool *payloads.Pool
+	var sr *payloads.StorageRepository
+
+	if hasPoolParam && poolIDStr != "" {
+		// Case 1: explicit poolId in StorageClass.
+		poolUUID, err := uuid.FromString(poolIDStr)
+		if err != nil || poolUUID == uuid.Nil {
+			return nil, status.Errorf(codes.InvalidArgument, "parameter %q must be a valid UUID, got %q", ParameterPoolID, poolIDStr)
+		}
+		if err := topology.ValidatePoolIDAgainstRequisite(ar, poolUUID); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		pool, sr, err = topology.SelectPoolAndStorage(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), []uuid.UUID{poolUUID})
+		if err != nil {
+			klog.ErrorS(err, "Pool or SR not viable", "poolID", poolUUID)
+			return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+		}
+	} else {
+		// Case 2: no poolId — derive from accessibility_requirements.
+		// Per the CSI spec, preferred topologies are tried first (in order),
+		// then requisite topologies as fallback.
+		orderedPoolIDs, err := topology.OrderedPoolIDs(ar)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"parameter %q is required when accessibility_requirements carry no pool topology: %v",
+				ParameterPoolID, err)
+		}
+		pool, sr, err = topology.SelectPoolAndStorage(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), orderedPoolIDs)
+		if err != nil {
+			klog.ErrorS(err, "No viable pool found in accessibility_requirements")
+			return nil, status.Errorf(codes.ResourceExhausted, "%v", err)
+		}
+		klog.V(5).InfoS("No poolId parameter, selected pool from accessibility_requirements", "poolID", pool.ID)
 	}
 
-	pool, err := driver.xoClient.Pool().Get(ctx, poolUUID)
-	if err != nil {
-		klog.ErrorS(err, "Failed to get pool", "poolID", poolIDStr)
-		return nil, status.Errorf(codes.NotFound, "pool %q not found or inaccessible: %v", poolIDStr, err)
-	}
-	if pool.DefaultSR == uuid.Nil {
-		klog.ErrorS(nil, "Pool has no default SR configured", "poolID", poolIDStr)
-		return nil, status.Errorf(codes.FailedPrecondition, "pool %q has no default SR configured", poolIDStr)
-	}
-	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", pool.DefaultSR)
+	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", sr.ID)
 
 	existingVDIs, err := driver.xoClient.VDI().GetAll(ctx, 1, fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyPVName, volumeName))
 	if err != nil {
@@ -314,12 +344,13 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 				VolumeId:           existingVDI.ID.String(),
 				CapacityBytes:      capacityBytes,
 				AccessibleTopology: driver.buildAccessibleTopology(pool),
+				VolumeContext:      buildVolumeContext(pool, sr),
 			},
 		}, nil
 	}
 
 	vdiParams := payloads.VDICreateParams{
-		SRId:            pool.DefaultSR,
+		SRId:            sr.ID,
 		NameLabel:       diskName,
 		VirtualSize:     capacityBytes,
 		NameDescription: "VDI managed by the Kubernetes CSI",
@@ -343,6 +374,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			VolumeId:           vdiID.String(),
 			CapacityBytes:      capacityBytes,
 			AccessibleTopology: driver.buildAccessibleTopology(pool),
+			VolumeContext:      buildVolumeContext(pool, sr),
 		},
 	}, nil
 }
@@ -467,10 +499,18 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 	return []*csi.Topology{
 		{
 			Segments: map[string]string{
-				xok8s.XOLabelTopologyPoolID:       pool.ID.String(),
-				"topology.k8s.xenorchestra/sr_id": pool.DefaultSR.String(),
+				xok8s.XOLabelTopologyPoolID: pool.ID.String(),
 			},
 		},
+	}
+}
+
+func buildVolumeContext(pool *payloads.Pool, sr *payloads.StorageRepository) map[string]string {
+	return map[string]string{
+		VolumeContextKeySRID:     sr.ID.String(),
+		VolumeContextKeySRName:   sr.NameLabel,
+		VolumeContextKeyPoolID:   pool.ID.String(),
+		VolumeContextKeyPoolName: pool.NameLabel,
 	}
 }
 

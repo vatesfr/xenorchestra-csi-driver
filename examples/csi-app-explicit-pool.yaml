@@ -1,0 +1,66 @@
+# Example: Dynamic volume provisioning with an explicit pool
+#
+# The StorageClass pins provisioning to a specific XenOrchestra pool via
+# the `poolId` parameter. The pod's node affinity is set to the same pool
+# so the scheduler only places the pod on nodes that can access the volume.
+#
+# When to use:
+#   - You have a single pool (or want to target a specific one explicitly).
+#   - You want predictable placement without relying on topology auto-detection.
+#
+# Replace <xo-pool-uuid> with your actual XenOrchestra pool UUID before applying.
+#
+# Apply: kubectl apply -f csi-app-explicit-pool.yaml
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xo-sc-explicit-pool
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  # UUID of the target XenOrchestra pool.
+  # The VDI will be created on that pool's default SR.
+  poolId: "<xo-pool-uuid>"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-pvc-explicit-pool
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: xo-sc-explicit-pool
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: xo-app-explicit-pool
+spec:
+  # Restrict scheduling to nodes in the same pool as the StorageClass poolId.
+  # This ensures the pod lands on a node that can access the provisioned VDI.
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.k8s.xenorchestra/pool_id
+                operator: In
+                values:
+                  - "<xo-pool-uuid>" # must match the poolId above
+  containers:
+    - name: app
+      image: busybox
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+      volumeMounts:
+        - mountPath: /data
+          name: storage
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: xo-pvc-explicit-pool
