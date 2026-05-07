@@ -22,9 +22,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/gofrs/uuid"
+	"github.com/samber/lo"
 
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library"
@@ -48,47 +50,39 @@ func OrderedPoolIDs(ar *csi.TopologyRequirement) ([]uuid.UUID, error) {
 		return nil, ErrNoPoolInTopology
 	}
 
-	seen := make(map[uuid.UUID]struct{})
-	var result []uuid.UUID
-
-	appendPool := func(v string) error {
-		id, err := uuid.FromString(v)
-		if err != nil || id == uuid.Nil {
-			return fmt.Errorf("invalid pool UUID %q in topology: %w", v, err)
-		}
-		if _, dup := seen[id]; !dup {
-			seen[id] = struct{}{}
-			result = append(result, id)
-		}
-		return nil
-	}
-
-	// 1. Preferred first (CSI spec: MUST attempt in order).
-	for _, topo := range ar.GetPreferred() {
-		v, ok := topo.GetSegments()[xok8s.XOLabelTopologyPoolID]
-		if !ok || v == "" {
-			continue
-		}
-		if err := appendPool(v); err != nil {
-			return nil, err
-		}
+	// // 1. Preferred first (CSI spec: MUST attempt in order).
+	preferredUuid, err := lo.FlatMapErr(ar.GetPreferred(), func(topo *csi.Topology, _ int) ([]uuid.UUID, error) {
+		return poolUUIDFromTopology(topo)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Requisite as fallback (any not already added from preferred).
-	for _, topo := range ar.GetRequisite() {
-		v, ok := topo.GetSegments()[xok8s.XOLabelTopologyPoolID]
-		if !ok || v == "" {
-			continue
-		}
-		if err := appendPool(v); err != nil {
-			return nil, err
-		}
+	requisiteUuid, err := lo.FlatMapErr(ar.GetRequisite(), func(topo *csi.Topology, _ int) ([]uuid.UUID, error) {
+		return poolUUIDFromTopology(topo)
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	if len(result) == 0 {
+	if len(preferredUuid) == 0 && len(requisiteUuid) == 0 {
 		return nil, ErrNoPoolInTopology
 	}
+	result := lo.Uniq(slices.Concat(preferredUuid, requisiteUuid))
 	return result, nil
+}
+
+func poolUUIDFromTopology(topo *csi.Topology) ([]uuid.UUID, error) {
+	v, ok := topo.GetSegments()[xok8s.XOLabelTopologyPoolID]
+	if !ok || v == "" {
+		return nil, nil // skip topologies with no pool segment or empty pool segment
+	}
+	id, err := uuid.FromString(v)
+	if err != nil || id == uuid.Nil {
+		return nil, fmt.Errorf("invalid UUID in topology segment %q: %w", xok8s.XOLabelTopologyPoolID, err)
+	}
+	return []uuid.UUID{id}, nil
 }
 
 // ValidatePoolIDAgainstRequisite checks that the given poolID appears in at
