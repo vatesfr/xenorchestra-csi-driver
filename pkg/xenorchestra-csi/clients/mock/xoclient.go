@@ -74,6 +74,22 @@ func (mr *MockXoClientMockRecorder) ConnectVBDToVM(ctx, vbd any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConnectVBDToVM", reflect.TypeOf((*MockXoClient)(nil).ConnectVBDToVM), ctx, vbd)
 }
 
+// CreateNewVolume mocks base method.
+func (m *MockXoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName, createdBy, clusterTag string) (uuid.UUID, uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNewVolume", ctx, srID, diskName, capacityBytes, volumeName, createdBy, clusterTag)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(uuid.UUID)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// CreateNewVolume indicates an expected call of CreateNewVolume.
+func (mr *MockXoClientMockRecorder) CreateNewVolume(ctx, srID, diskName, capacityBytes, volumeName, createdBy, clusterTag any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNewVolume", reflect.TypeOf((*MockXoClient)(nil).CreateNewVolume), ctx, srID, diskName, capacityBytes, volumeName, createdBy, clusterTag)
+}
+
 // DisconnectVBDFromVM mocks base method.
 func (m *MockXoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
 	m.ctrl.T.Helper()
@@ -86,6 +102,22 @@ func (m *MockXoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI
 func (mr *MockXoClientMockRecorder) DisconnectVBDFromVM(ctx, vdi, vmUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisconnectVBDFromVM", reflect.TypeOf((*MockXoClient)(nil).DisconnectVBDFromVM), ctx, vdi, vmUUID)
+}
+
+// FindVDIByVolumeName mocks base method.
+func (m *MockXoClient) FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindVDIByVolumeName", ctx, volumeName)
+	ret0, _ := ret[0].(*payloads.VDI)
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// FindVDIByVolumeName indicates an expected call of FindVDIByVolumeName.
+func (mr *MockXoClientMockRecorder) FindVDIByVolumeName(ctx, volumeName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindVDIByVolumeName", reflect.TypeOf((*MockXoClient)(nil).FindVDIByVolumeName), ctx, volumeName)
 }
 
 // GetVBDFromVDIAndVM mocks base method.
@@ -103,6 +135,21 @@ func (mr *MockXoClientMockRecorder) GetVBDFromVDIAndVM(ctx, vdi, vmUUID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVBDFromVDIAndVM", reflect.TypeOf((*MockXoClient)(nil).GetVBDFromVDIAndVM), ctx, vdi, vmUUID)
 }
 
+// GetVDIByVolumeId mocks base method.
+func (m *MockXoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVDIByVolumeId", ctx, volumeId)
+	ret0, _ := ret[0].(*payloads.VDI)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVDIByVolumeId indicates an expected call of GetVDIByVolumeId.
+func (mr *MockXoClientMockRecorder) GetVDIByVolumeId(ctx, volumeId any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVDIByVolumeId", reflect.TypeOf((*MockXoClient)(nil).GetVDIByVolumeId), ctx, volumeId)
+}
+
 // Host mocks base method.
 func (m *MockXoClient) Host() library.Host {
 	m.ctrl.T.Helper()
@@ -115,6 +162,20 @@ func (m *MockXoClient) Host() library.Host {
 func (mr *MockXoClientMockRecorder) Host() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Host", reflect.TypeOf((*MockXoClient)(nil).Host))
+}
+
+// IsSRAttachedToHost mocks base method.
+func (m *MockXoClient) IsSRAttachedToHost(ctx context.Context, srID, hostID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsSRAttachedToHost", ctx, srID, hostID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IsSRAttachedToHost indicates an expected call of IsSRAttachedToHost.
+func (mr *MockXoClientMockRecorder) IsSRAttachedToHost(ctx, srID, hostID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSRAttachedToHost", reflect.TypeOf((*MockXoClient)(nil).IsSRAttachedToHost), ctx, srID, hostID)
 }
 
 // IsSRAttachedToVMHost mocks base method.
@@ -144,20 +205,6 @@ func (m *MockXoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI)
 func (mr *MockXoClientMockRecorder) IsVDIUsedAnywhere(ctx, vdi any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsVDIUsedAnywhere", reflect.TypeOf((*MockXoClient)(nil).IsVDIUsedAnywhere), ctx, vdi)
-}
-
-// IsSRAttachedToHost mocks base method.
-func (m *MockXoClient) IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSRAttachedToHost", ctx, srID, hostID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// IsSRAttachedToHost indicates an expected call of IsSRAttachedToHost.
-func (mr *MockXoClientMockRecorder) IsSRAttachedToHost(ctx, srID, hostID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSRAttachedToHost", reflect.TypeOf((*MockXoClient)(nil).IsSRAttachedToHost), ctx, srID, hostID)
 }
 
 // PBD mocks base method.

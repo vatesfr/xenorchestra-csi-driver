@@ -18,7 +18,6 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -104,15 +103,17 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capability: %v", err)
 	}
 
-	// Volume ID is the VDI UUID
-	volumeId, err := uuid.FromString(req.GetVolumeId())
-	if err != nil || volumeId == uuid.Nil {
+	volumeId := req.GetVolumeId()
+	if volumeId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
 	}
 
-	vdi, err := driver.xoClient.VDI().Get(ctx, volumeId)
+	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeId)
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "failed to get VDI: %v", err)
+		if errors.Is(err, clients.ErrVolumeNotFound) {
+			return nil, status.Errorf(codes.NotFound, "volume %s not found: %v", volumeId, err)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeId, err)
 	}
 
 	// Adopt the VDI into this cluster's tag set if the tag is not already present.
@@ -170,7 +171,6 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 					klog.ErrorS(err, "Failed to connect VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
 					return nil, status.Errorf(codes.Internal, "Failed to connect VBD to VM: %v", err)
 				}
-				// Should be fixed by the addition of Device field in VBD
 				return &csi.ControllerPublishVolumeResponse{
 					PublishContext: publishContextFromVBD(*vbdConnected),
 				}, nil
@@ -218,22 +218,31 @@ func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Conte
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
 	}
 
-	// Volume ID is the VDI UUID
-	volumeId, err := uuid.FromString(req.GetVolumeId())
-	if err != nil || volumeId == uuid.Nil {
+	volumeId := req.GetVolumeId()
+	if volumeId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
 	}
 
-	err = driver.xoClient.DisconnectVBDFromVM(ctx, payloads.VDI{ID: volumeId}, vmUUID)
+	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeId)
+	if err != nil {
+		if errors.Is(err, clients.ErrVolumeNotFound) {
+			// VDI is already gone; idempotent success.
+			klog.V(5).InfoS("VDI not found, treating as already detached", "volumeID", volumeId)
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
+		}
+		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeId, err)
+	}
+
+	err = driver.xoClient.DisconnectVBDFromVM(ctx, *vdi, vmUUID)
 	if err != nil {
 		// Ignore not found errors as the VBD may have already been detached
 		if !errors.Is(err, clients.ErrVBDNotFound) {
-			klog.ErrorS(err, "Failed to detach VDI from VM", "vdiID", volumeId, "vmUUID", vmUUID)
+			klog.ErrorS(err, "Failed to detach VDI from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
 			return nil, status.Errorf(codes.Internal, "Failed to detach VDI from VM: %v", err)
 		}
-		klog.V(5).InfoS("VBD not found, already detached", "vdiID", volumeId, "vmUUID", vmUUID)
+		klog.V(5).InfoS("VBD not found, already detached", "vdiID", vdi.ID, "vmUUID", vmUUID)
 	}
-	klog.V(5).InfoS("VBD disconnected from VM", "vdiID", volumeId, "vmUUID", vmUUID)
+	klog.V(5).InfoS("VBD disconnected from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
@@ -328,20 +337,28 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", sr.ID)
 
-	existingVDIs, err := driver.xoClient.VDI().GetAll(ctx, 1, fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyPVName, volumeName))
+	// Idempotency check: return the existing VDI if one was already created for this PV name.
+	existingVDI, existingId, err := driver.xoClient.FindVDIByVolumeName(ctx, volumeName)
 	if err != nil {
-		klog.ErrorS(err, "Failed to check for existing VDI", "volumeName", volumeName)
-		return nil, status.Errorf(codes.Internal, "failed to check for existing VDI: %v", err)
+		if errors.Is(err, clients.ErrVolumeNotFound) {
+			existingVDI = nil
+		} else {
+			klog.ErrorS(err, "Failed to check for existing VDI", "volumeName", volumeName)
+			return nil, status.Errorf(codes.Internal, "failed to check for existing VDI: %v", err)
+		}
 	}
-	if len(existingVDIs) > 0 {
-		existingVDI := existingVDIs[0]
+	if existingVDI != nil {
 		if existingVDI.Size != capacityBytes {
 			return nil, status.Errorf(codes.AlreadyExists, "volume with name %q already exists with different capacity: existing %d, requested %d", volumeName, existingVDI.Size, capacityBytes)
 		}
-		klog.V(5).InfoS("Volume already exists, returning existing VDI", "vdiID", existingVDI.ID, "volumeName", volumeName)
+		// Recover the stable volume ID stored at creation time.
+		if existingId == "" {
+			return nil, status.Errorf(codes.Internal, "existing VDI %s is missing volume ID in other_config", existingVDI.ID)
+		}
+		klog.V(5).InfoS("Volume already exists, returning existing VDI", "vdiID", existingVDI.ID, "volumeId", existingId)
 		return &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
-				VolumeId:           existingVDI.ID.String(),
+				VolumeId:           existingId,
 				CapacityBytes:      capacityBytes,
 				AccessibleTopology: driver.buildAccessibleTopology(pool),
 				VolumeContext:      buildVolumeContext(pool, sr),
@@ -349,29 +366,16 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}, nil
 	}
 
-	vdiParams := payloads.VDICreateParams{
-		SRId:            sr.ID,
-		NameLabel:       diskName,
-		VirtualSize:     capacityBytes,
-		NameDescription: "VDI managed by the Kubernetes CSI",
-		OtherConfig: map[string]string{
-			VDIOtherConfigKeyCreatedBy: DriverName,
-			VDIOtherConfigKeyPVName:    volumeName,
-		},
-	}
-	if driver.clusterTag != "" {
-		vdiParams.Tags = []string{driver.clusterTag}
-	}
-	vdiID, err := driver.xoClient.VDI().Create(ctx, vdiParams)
+	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, diskName, capacityBytes, volumeName, DriverName, driver.clusterTag)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "diskName", diskName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
 	}
-	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "diskName", diskName, "capacityBytes", capacityBytes)
+	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "volumeID", volumeID, "diskName", diskName)
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:           vdiID.String(),
+			VolumeId:           volumeID.String(),
 			CapacityBytes:      capacityBytes,
 			AccessibleTopology: driver.buildAccessibleTopology(pool),
 			VolumeContext:      buildVolumeContext(pool, sr),
@@ -389,50 +393,49 @@ func (driver *xenorchestraCSIDriver) DeleteSnapshot(context.Context, *csi.Delete
 func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	klog.V(5).Infof("DeleteVolume called, request: %v", req)
 
-	if req.GetVolumeId() == "" {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
 	}
 
-	volumeID, err := uuid.FromString(req.GetVolumeId())
-	if err != nil || volumeID == uuid.Nil {
-		return &csi.DeleteVolumeResponse{}, nil // Treat invalid volume ID as already deleted to be idempotent
-	}
-
-	// Check whether the VDI still exists. Return success immediately if it is already gone
-	_, err = driver.xoClient.VDI().Get(ctx, volumeID)
+	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeID)
 	if err != nil {
-		if isNotFoundError(err) {
+		if errors.Is(err, clients.ErrVolumeNotFound) {
 			klog.V(5).InfoS("VDI not found, treating as already deleted", "volumeID", volumeID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
-		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
-		return nil, status.Errorf(codes.Internal, "failed to get VDI %s: %v", volumeID, err)
+		if errors.Is(err, clients.ErrVolumeIdAmbiguous) {
+			klog.ErrorS(err, "Multiple VDIs match volume ID, refusing deletion", "volumeID", volumeID)
+			return nil, status.Errorf(codes.Internal, "multiple VDIs match volume ID %s", volumeID)
+		}
+		klog.ErrorS(err, "Failed to look up volume", "volumeID", volumeID)
+		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeID, err)
 	}
 
 	// Refuse to delete a VDI that is still attached to a VM.
-	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, &payloads.VDI{ID: volumeID})
+	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, vdi)
 	if err != nil {
-		klog.ErrorS(err, "Failed to check VDI attachments", "volumeID", volumeID)
-		return nil, status.Errorf(codes.Internal, "failed to check VDI attachments for %s: %v", volumeID, err)
+		klog.ErrorS(err, "Failed to check VDI attachments", "vdiID", vdi.ID)
+		return nil, status.Errorf(codes.Internal, "failed to check VDI attachments for %s: %v", vdi.ID, err)
 	}
 	for _, vbd := range vbds {
 		if vbd.Attached {
-			klog.ErrorS(nil, "VDI still attached to a VM, refusing deletion", "volumeID", volumeID, "vmID", vbd.VM)
-			return nil, status.Errorf(codes.FailedPrecondition, "volume %s is still attached to VM %s", volumeID, vbd.VM)
+			klog.ErrorS(nil, "VDI still attached to a VM, refusing deletion", "vdiID", vdi.ID, "vmID", vbd.VM)
+			return nil, status.Errorf(codes.FailedPrecondition, "VDI %s is still attached to VM %s", vdi.ID, vbd.VM)
 		}
 	}
 
-	if err := driver.xoClient.VDI().Delete(ctx, volumeID); err != nil {
+	if err := driver.xoClient.VDI().Delete(ctx, vdi.ID); err != nil {
 		if isNotFoundError(err) {
-			// Deleted by a concurrent call between our Get and Delete
-			klog.V(5).InfoS("VDI already deleted by concurrent call", "volumeID", volumeID)
+			// Deleted by a concurrent call between our lookup and Delete
+			klog.V(5).InfoS("VDI already deleted by concurrent call", "vdiID", vdi.ID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
-		klog.ErrorS(err, "Failed to delete VDI", "volumeID", volumeID)
-		return nil, status.Errorf(codes.Internal, "failed to delete VDI %s: %v", volumeID, err)
+		klog.ErrorS(err, "Failed to delete VDI", "vdiID", vdi.ID)
+		return nil, status.Errorf(codes.Internal, "failed to delete VDI %s: %v", vdi.ID, err)
 	}
 
-	klog.V(5).InfoS("VDI deleted successfully", "volumeID", volumeID)
+	klog.V(5).InfoS("VDI deleted successfully", "vdiID", vdi.ID, "volumeID", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -458,26 +461,22 @@ func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolum
 func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	klog.V(5).Info("ValidateVolumeCapabilities called", "request", req)
 
-	if len(req.GetVolumeId()) == 0 {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
-	}
-
-	volumeID, err := uuid.FromString(req.GetVolumeId())
-	if err != nil || volumeID == uuid.Nil {
-		return nil, status.Errorf(codes.InvalidArgument, "Volume ID must be a valid UUID")
 	}
 
 	if len(req.GetVolumeCapabilities()) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "At least one volume capability is required")
 	}
 
-	_, err = driver.xoClient.VDI().Get(ctx, volumeID)
+	_, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeID)
 	if err != nil {
-		if isNotFoundError(err) {
+		if errors.Is(err, clients.ErrVolumeNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Volume %s not found", volumeID)
 		}
 		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
-		return nil, status.Errorf(codes.Internal, "Failed to get VDI %s: %v", volumeID, err)
+		return nil, status.Errorf(codes.Internal, "Failed to get VDI for volume %s: %v", volumeID, err)
 	}
 
 	if err := validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
@@ -505,6 +504,8 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 	}
 }
 
+// buildVolumeContext constructs the CSI VolumeContext map that is stored in the PV's
+// volumeAttributes and passed back to ControllerPublishVolume / NodeStageVolume.
 func buildVolumeContext(pool *payloads.Pool, sr *payloads.StorageRepository) map[string]string {
 	return map[string]string{
 		VolumeContextKeySRID:     sr.ID.String(),
