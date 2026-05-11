@@ -28,10 +28,10 @@ for example during a storage live migration or a manual VDI move between SRs.
 ## Behavior in v0.3.0
 
 In v0.3.0, the driver uses a stable CSI volume ID stored in VDI metadata under:
-- other-config key: csi-volume-handle
+- other-config key: kubernetes_volume_id
 
 This key is represented in code by:
-- VDIOtherConfigKeyVolumeId = csi-volume-handle
+- VDIOtherConfigKeyVolumeId = kubernetes_volume_id
 
 The objective is to decouple CSI identity from backend VDI UUID lifecycle.
 
@@ -48,14 +48,14 @@ Using a dedicated metadata key makes the identity explicit and stable.
 ## Practical implications
 
 - New volumes created with v0.3.0 get a dedicated CSI volume ID in
-  other-config:csi-volume-handle.
+  other-config:kubernetes_volume_id.
 - Legacy volumes created before v0.3.0 may not have this key.
 - Legacy volumes should be backfilled during migration so that operational
   lookup remains consistent after upgrade.
 
 ## Metadata key reference
 
-- Key: csi-volume-handle
+- Key: kubernetes_volume_id
 - Location: VDI other-config
 - Expected value:
   - v0.3.0 native volumes: generated stable CSI volume ID,
@@ -64,8 +64,8 @@ Using a dedicated metadata key makes the identity explicit and stable.
 ## Related keys
 
 Other keys commonly present in VDI other-config:
-- createdBy
-- kubernetesPVName
+- kubernetes_created_by
+- kubernetes_pv_name
 
 These keys are informational and separate from the CSI stable volume identity
 key introduced for v0.3.0.

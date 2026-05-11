@@ -42,7 +42,7 @@ type XoClient interface {
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
 	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 	// FindVDIByVolumeName looks up a VDI by the Kubernetes PV name stored in
-	// VDI.other_config["kubernetesPVName"]. It returns nil, nil when not found.
+	// VDI.other_config["kubernetes_pv_name"]. It returns nil, nil when not found.
 	FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error)
 	// IsSRAttachedToHost checks that the given SR is connected (via a plugged PBD) to the given host.
 	// Returns nil when the SR is reachable, or a descriptive error otherwise.
@@ -53,7 +53,7 @@ type XoClient interface {
 	IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error
 
 	// GetVDIByVolumeId looks up a VDI by its CSI volume ID (UUID).
-	// The ID is stored in VDI.other_config["csi-volume-handle"] at creation time
+	// The ID is stored in VDI.other_config["kubernetes_volume_id"] at creation time
 	// and remains stable across SR migrations.
 	// Returns ErrVolumeNotFound if no VDI matches, ErrVolumeIdAmbiguous if multiple match.
 	GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error)

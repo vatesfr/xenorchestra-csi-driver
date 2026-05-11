@@ -18,12 +18,12 @@ package clients
 // VDIOtherConfigKeyVolumeId is the XO VDI other_config key that stores the
 // CSI volume ID (UUID) generated at CreateVolume time.
 // This UUID is stable across SR migrations (VDI UUID changes, volume ID does not).
-const VDIOtherConfigKeyVolumeId = "csi-volume-handle"
+const VDIOtherConfigKeyVolumeId = "kubernetes_volume_id"
 
 // VDIOtherConfigKeyCreatedBy is the key in VDI's other_config map that identifies
 // the component that created the VDI (always set to the driver name).
-const VDIOtherConfigKeyCreatedBy = "createdBy"
+const VDIOtherConfigKeyCreatedBy = "kubernetes_created_by"
 
 // VDIOtherConfigKeyPVName is the key in VDI's other_config map that stores
 // the Kubernetes PersistentVolume name associated with this VDI.
-const VDIOtherConfigKeyPVName = "kubernetesPVName"
+const VDIOtherConfigKeyPVName = "kubernetes_pv_name"
