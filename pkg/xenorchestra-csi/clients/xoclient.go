@@ -17,7 +17,6 @@ package clients
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -29,9 +28,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ErrVBDNotFound is returned when no VBD matches the given VDI and VM combination.
-var ErrVBDNotFound = errors.New("VBD not found")
-
 // This interface extends the library.Library interface to add methods specific to Xen Orchestra operations needed by the CSI driver.
 // It's done to encapsulate call to the legacy v1 client waiting for the v2 client to support all required operations.
 //
@@ -42,8 +38,12 @@ type XoClient interface {
 	ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error)
 	DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
 	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
+	CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
 	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
+	// FindVDIByVolumeName looks up a VDI by the Kubernetes PV name stored in
+	// VDI.other_config["kubernetes_pv_name"]. It returns nil, nil when not found.
+	FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error)
 	// IsSRAttachedToHost checks that the given SR is connected (via a plugged PBD) to the given host.
 	// Returns nil when the SR is reachable, or a descriptive error otherwise.
 	IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error
@@ -51,6 +51,12 @@ type XoClient interface {
 	// to the XCP-ng host where the VBD's VM is currently running.
 	// Returns nil when the SR is reachable, or a descriptive error otherwise.
 	IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error
+
+	// GetVDIByVolumeId looks up a VDI by its CSI volume ID (UUID).
+	// The ID is stored in VDI.other_config["kubernetes_volume_id"] at creation time
+	// and remains stable across SR migrations.
+	// Returns ErrVolumeNotFound if no VDI matches, ErrVolumeIdAmbiguous if multiple match.
+	GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error)
 }
 
 type xoClient struct {
@@ -123,6 +129,37 @@ func (c xoClient) AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uu
 	klog.V(4).InfoS("attachDiskToVM: disk attached", "vdi", vdi.ID, "vm", vmUUID, "vbd", vbd)
 
 	return vbd, nil
+}
+
+func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error) {
+	volumeId, err := uuid.NewV4()
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("failed to generate volume ID UUID: %w", err)
+	}
+
+	otherConfig := map[string]string{
+		VDIOtherConfigKeyCreatedBy: createdBy,
+		VDIOtherConfigKeyPVName:    volumeName,
+		VDIOtherConfigKeyVolumeId:  volumeId.String(),
+	}
+
+	vdiParams := payloads.VDICreateParams{
+		SRId:            srID,
+		NameLabel:       diskName,
+		VirtualSize:     capacityBytes,
+		NameDescription: "VDI managed by the Kubernetes CSI",
+		OtherConfig:     otherConfig,
+	}
+	if clusterTag != "" {
+		vdiParams.Tags = []string{clusterTag}
+	}
+
+	vdiID, err := c.VDI().Create(ctx, vdiParams)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("failed to create VDI: %w", err)
+	}
+
+	return vdiID, volumeId, nil
 }
 
 // waitForDiskToBeAttached waits for the disk to be attached.
@@ -219,4 +256,36 @@ func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmU
 		klog.ErrorS(err, "Failed to wait for task to complete", "taskID", taskID, "taskResult", task.Result)
 	}
 	return err
+}
+
+func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error) {
+	filter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+	vdis, err := c.VDI().GetAll(ctx, 2, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list VDIs by volume ID %s: %w", volumeId, err)
+	}
+	switch len(vdis) {
+	case 0:
+		return nil, ErrVolumeNotFound
+	case 1:
+		return vdis[0], nil
+	default:
+		return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs", ErrVolumeIdAmbiguous, volumeId, len(vdis))
+	}
+}
+
+func (c xoClient) FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error) {
+	filter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyPVName, volumeName)
+	vdis, err := c.VDI().GetAll(ctx, 2, filter)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to list VDIs by volume name %s: %w", volumeName, err)
+	}
+	switch len(vdis) {
+	case 0:
+		return nil, "", ErrVolumeNotFound
+	case 1:
+		return vdis[0], vdis[0].OtherConfig[VDIOtherConfigKeyVolumeId], nil
+	default:
+		return nil, "", fmt.Errorf("%w: volumeName=%s matched %d VDIs", ErrVolumeNameAmbiguous, volumeName, len(vdis))
+	}
 }

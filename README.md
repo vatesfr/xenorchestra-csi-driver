@@ -26,15 +26,18 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 ## Prerequisite
 
-* XenOrchestra version 5.110.1+
+* XenOrchestra version **6.4+**
 * XCP-ng version 8.3+
 * Network connectivity between Kubernetes nodes and XO API
 
 ## Documentation
 
+- [Documentation index](docs/README.md) – entry point to guides, migrations, and references.
 - [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static and dynamic provisioning.
 - [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
+- [Migration v0.2.0 to v0.3.0](docs/migrations/v0.2.0-to-v0.3.0.md) – backfill `other-config:kubernetes_volume_id` on legacy VDIs.
+- [Reference: Volume Handle and Volume ID in v0.3.0](docs/references/volume-handle-and-volume-id-v0.3.0.md) – details about stable CSI identity semantics.
 
 ## Install driver on a Kubernetes cluster
 
