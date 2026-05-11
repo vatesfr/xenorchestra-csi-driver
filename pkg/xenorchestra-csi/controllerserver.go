@@ -111,6 +111,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeId)
 	if err != nil {
 		if errors.Is(err, clients.ErrVolumeNotFound) {
+			klog.V(2).InfoS("Volume handle not found during ControllerPublishVolume", "volumeID", volumeId)
 			return nil, status.Errorf(codes.NotFound, "volume %s not found: %v", volumeId, err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeId, err)
@@ -428,7 +429,7 @@ func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.
 	if err := driver.xoClient.VDI().Delete(ctx, vdi.ID); err != nil {
 		if isNotFoundError(err) {
 			// Deleted by a concurrent call between our lookup and Delete
-			klog.V(5).InfoS("VDI already deleted by concurrent call", "vdiID", vdi.ID)
+			klog.V(4).InfoS("VDI not found during delete call, already deleted by concurrent call", "volumeID", volumeID, "vdiID", vdi.ID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 		klog.ErrorS(err, "Failed to delete VDI", "vdiID", vdi.ID)
@@ -473,6 +474,7 @@ func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(ctx context.Cont
 	_, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeID)
 	if err != nil {
 		if errors.Is(err, clients.ErrVolumeNotFound) {
+			klog.V(2).InfoS("VDI not found during ValidateVolumeCapabilities", "volumeID", volumeID)
 			return nil, status.Errorf(codes.NotFound, "Volume %s not found", volumeID)
 		}
 		klog.ErrorS(err, "Failed to get VDI", "volumeID", volumeID)
