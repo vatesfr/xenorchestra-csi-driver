@@ -26,7 +26,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 ## Prerequisite
 
-* XenOrchestra version 5.110.1+
+* XenOrchestra version **6.4+**
 * XCP-ng version 8.3+
 * Network connectivity between Kubernetes nodes and XO API
 
