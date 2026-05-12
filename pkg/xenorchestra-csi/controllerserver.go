@@ -138,6 +138,35 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolID, nodeVM.PoolID)
 	}
 
+	// For local storage, migrate the VDI to the host's local SR if needed.
+	if req.GetVolumeContext()[VolumeContextKeyStorageType] == StorageTypeLocal {
+		localSR, err := driver.xoClient.FindLocalSRForHost(ctx, nodeVM.Container)
+		if err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"no local SR found for host %s: %v", nodeVM.Container, err)
+		}
+		if vdi.SR != localSR.ID {
+			klog.V(2).InfoS("Migrating VDI to local SR",
+				"vdiID", vdi.ID, "fromSR", vdi.SR, "toSR", localSR.ID)
+			newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, vdi.ID, localSR.ID)
+			if err != nil {
+				klog.ErrorS(err, "Failed to migrate VDI to local SR", "vdiID", vdi.ID, "localSRID", localSR.ID)
+				return nil, status.Errorf(codes.Internal,
+					"failed to migrate VDI %s to local SR %s: %v", vdi.ID, localSR.ID, err)
+			}
+			vdi, err = driver.xoClient.VDI().Get(ctx, newVDIUUID)
+			if err != nil {
+				klog.ErrorS(err, "Failed to fetch VDI after migration", "newVDIID", newVDIUUID)
+				return nil, status.Errorf(codes.Internal,
+					"failed to fetch VDI after migration (newUUID=%s): %v", newVDIUUID, err)
+			}
+			klog.V(2).InfoS("VDI migrated successfully", "newVDIID", vdi.ID, "srID", localSR.ID)
+		} else {
+			klog.V(4).InfoS("VDI already on correct local SR, skipping migration",
+				"vdiID", vdi.ID, "srID", localSR.ID)
+		}
+	}
+
 	// Verify the SR is reachable from the host where the VM is running before attempting
 	// to attach or connect any VBD.
 	if err := driver.xoClient.IsSRAttachedToHost(ctx, vdi.SR, nodeVM.Container); err != nil {
@@ -301,6 +330,15 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	poolIDStr, hasPoolParam := params[ParameterPoolID]
 	ar := req.GetAccessibilityRequirements()
 
+	storageType := params[ParameterStorageType]
+	if storageType == "" {
+		storageType = StorageTypeShared
+	}
+	if storageType != StorageTypeShared && storageType != StorageTypeLocal {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid storageType %q: must be %q or %q", storageType, StorageTypeShared, StorageTypeLocal)
+	}
+
 	var pool *payloads.Pool
 	var sr *payloads.StorageRepository
 
@@ -338,6 +376,19 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 
 	klog.V(5).InfoS("Using pool and SR", "poolID", pool.ID, "srID", sr.ID)
 
+	// For local storage, override the SR with one of the pool's local SRs so
+	// the VDI lands on local storage from the start rather than on the shared
+	// DefaultSR. That will help avoid an extra migration step in the common case
+	// where the volume is created and attached to the same node.
+	if storageType == StorageTypeLocal {
+		localSRs, err := driver.xoClient.FindLocalSRsForPool(ctx, pool.ID)
+		if err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "no local SR available in pool %s: %v", pool.ID, err)
+		}
+		sr = localSRs[0]
+		klog.V(4).InfoS("Local storageType: using local SR for initial VDI creation", "poolID", pool.ID, "srID", sr.ID)
+	}
+
 	// Idempotency check: return the existing VDI if one was already created for this PV name.
 	existingVDI, existingId, err := driver.xoClient.FindVDIByVolumeName(ctx, volumeName)
 	if err != nil {
@@ -362,7 +413,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 				VolumeId:           existingId,
 				CapacityBytes:      capacityBytes,
 				AccessibleTopology: driver.buildAccessibleTopology(pool),
-				VolumeContext:      buildVolumeContext(pool, sr),
+				VolumeContext:      buildVolumeContext(pool, sr, storageType),
 			},
 		}, nil
 	}
@@ -379,7 +430,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			VolumeId:           volumeID.String(),
 			CapacityBytes:      capacityBytes,
 			AccessibleTopology: driver.buildAccessibleTopology(pool),
-			VolumeContext:      buildVolumeContext(pool, sr),
+			VolumeContext:      buildVolumeContext(pool, sr, storageType),
 		},
 	}, nil
 }
@@ -508,12 +559,13 @@ func (driver *xenorchestraCSIDriver) buildAccessibleTopology(pool *payloads.Pool
 
 // buildVolumeContext constructs the CSI VolumeContext map that is stored in the PV's
 // volumeAttributes and passed back to ControllerPublishVolume / NodeStageVolume.
-func buildVolumeContext(pool *payloads.Pool, sr *payloads.StorageRepository) map[string]string {
+func buildVolumeContext(pool *payloads.Pool, sr *payloads.StorageRepository, storageType string) map[string]string {
 	return map[string]string{
-		VolumeContextKeySRID:     sr.ID.String(),
-		VolumeContextKeySRName:   sr.NameLabel,
-		VolumeContextKeyPoolID:   pool.ID.String(),
-		VolumeContextKeyPoolName: pool.NameLabel,
+		VolumeContextKeySRID:        sr.ID.String(),
+		VolumeContextKeySRName:      sr.NameLabel,
+		VolumeContextKeyPoolID:      pool.ID.String(),
+		VolumeContextKeyPoolName:    pool.NameLabel,
+		VolumeContextKeyStorageType: storageType,
 	}
 }
 

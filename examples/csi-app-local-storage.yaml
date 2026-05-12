@@ -1,0 +1,79 @@
+# Example: Local storage dynamic volume provisioning
+#
+# The StorageClass sets `storageType: local`. This changes provisioning
+# behaviour in two ways compared to the default shared storage:
+#
+#   1. CreateVolume: the VDI is created on a local (non-shared) SR in the
+#      selected pool instead of the pool's DefaultSR.
+#   2. ControllerPublishVolume: before attaching the VDI to the target VM,
+#      the driver migrates it to the local SR of the host where the VM runs.
+#      If the VM is later rescheduled to a different host, the next
+#      ControllerPublishVolume call migrates the VDI to the new host's
+#      local SR automatically.
+#
+# When to use:
+#   - Workloads that benefit from local NVMe/SSD storage (low latency, high
+#     throughput) and can tolerate node affinity constraints.
+#   - Single-node or pinned workloads where live migration is not expected.
+#
+# Requirements:
+#   - volumeBindingMode: WaitForFirstConsumer  — the scheduler must pick a
+#     node before ControllerPublishVolume runs so the driver knows which
+#     host's local SR to target. Immediate binding is strongly discouraged.
+#   - Each host in the pool must have at least one local user SR that is
+#     plugged and not in maintenance mode.
+#   - Nodes must carry the topology.k8s.xenorchestra/pool_id label
+#     (set by the XenOrchestra CCM or the CSI node plugin's NodeGetInfo).
+#
+# Replace <xo-pool-uuid> with the UUID of your Xen Orchestra pool.
+#
+# Apply: kubectl apply -f csi-app-local-storage.yaml
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xo-sc-local
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  storageType: "local"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-pvc-local
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: xo-sc-local
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: xo-app-local
+spec:
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #         - matchExpressions:
+  #             - key: kubernetes.io/hostname
+  #               operator: In
+  #               values:
+  #                 - "cp"
+  containers:
+    - name: app
+      image: busybox
+      command: [ "/bin/sh", "-c", "trap 'exit 0' TERM INT; while true; do sleep 2; done" ]
+      volumeMounts:
+        - mountPath: /data
+          name: storage
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: xo-pvc-local

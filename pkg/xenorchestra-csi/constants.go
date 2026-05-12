@@ -49,4 +49,23 @@ const (
 	// VolumeContextKeyPoolName is the key in the PV's volumeAttributes (CSI VolumeContext)
 	// that stores the human-readable name of the Xen Orchestra pool.
 	VolumeContextKeyPoolName = "poolName"
+
+	// ParameterStorageType is an optional StorageClass parameter.
+	// Valid values: "shared" (default) or "local".
+	// - "shared": VDI is created on pool.DefaultSR and used as-is (current behavior).
+	// - "local":  VDI is created on random local SR of the pool at provision time, then migrated
+	//             to the target host's local SR in ControllerPublishVolume before
+	//             being attached to the VM.
+	ParameterStorageType = "storageType"
+
+	// StorageTypeShared is the default storageType: use pool shared storage.
+	StorageTypeShared = "shared"
+
+	// StorageTypeLocal migrates the VDI to the target host's local SR in
+	// ControllerPublishVolume before attaching.
+	StorageTypeLocal = "local"
+
+	// VolumeContextKeyStorageType carries the storageType value through the CSI
+	// lifecycle (CreateVolume → ControllerPublishVolume).
+	VolumeContextKeyStorageType = "storageType"
 )

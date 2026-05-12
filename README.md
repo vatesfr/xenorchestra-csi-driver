@@ -23,6 +23,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 - Static volume provisioning (use an existing VDI by UUID).
 - Dynamic volume provisioning (automatically create a VDI from a StorageClass).
+- Local storage support: pin VDIs to a host-local SR with automatic migration on reschedule.
 
 ## Prerequisite
 
@@ -38,6 +39,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
 - [Migration v0.2.0 to v0.3.0](docs/migrations/v0.2.0-to-v0.3.0.md) – backfill `other-config:kubernetes_volume_id` on legacy VDIs.
 - [Reference: Volume Handle and Volume ID in v0.3.0](docs/references/volume-handle-and-volume-id-v0.3.0.md) – details about stable CSI identity semantics.
+- [Reference: Local Storage: VDI Placement and Migration](docs/references/local-storage.md) – SR selection, VDI migration, idempotency, and VM live-migration behaviour.
 
 ## Install driver on a Kubernetes cluster
 
@@ -105,6 +107,7 @@ an error is returned if they are incompatible.
 Name | Meaning | Example | Required | Default
 --- | --- | --- | --- | ---
 `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | No | —
+`storageType` | Storage placement: `shared` (pool default SR) or `local` (host-local SR, migrated at attach time). | `local` | No | `shared`
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -181,10 +184,11 @@ allowVolumeExpansion: false
 - [x] `poolId` validation against `accessibility_requirements` requisite topologies
 - [x] `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — `AccessibleTopology` returned in `CreateVolumeResponse`, topology requirements honoured in `CreateVolumeRequest`
 - [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
-- [ ] Cluster Topology support
+- [x] Cluster Topology support
 - [ ] Multi-SR support (migration...)
-- [ ] Multi-pool support
-- [ ] XO CCM
+- [x] Local SR support (`storageType: local` — VDI migration to host-local SR in `ControllerPublishVolume`)
+- [x] Multi-pool support
+- [x] XO CCM
 
 ## Contributing
 
