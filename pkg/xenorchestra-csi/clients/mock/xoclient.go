@@ -104,6 +104,36 @@ func (mr *MockXoClientMockRecorder) DisconnectVBDFromVM(ctx, vdi, vmUUID any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisconnectVBDFromVM", reflect.TypeOf((*MockXoClient)(nil).DisconnectVBDFromVM), ctx, vdi, vmUUID)
 }
 
+// FindLocalSRForHost mocks base method.
+func (m *MockXoClient) FindLocalSRForHost(ctx context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindLocalSRForHost", ctx, hostID)
+	ret0, _ := ret[0].(*payloads.StorageRepository)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindLocalSRForHost indicates an expected call of FindLocalSRForHost.
+func (mr *MockXoClientMockRecorder) FindLocalSRForHost(ctx, hostID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLocalSRForHost", reflect.TypeOf((*MockXoClient)(nil).FindLocalSRForHost), ctx, hostID)
+}
+
+// FindLocalSRsForPool mocks base method.
+func (m *MockXoClient) FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindLocalSRsForPool", ctx, poolID)
+	ret0, _ := ret[0].([]*payloads.StorageRepository)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindLocalSRsForPool indicates an expected call of FindLocalSRsForPool.
+func (mr *MockXoClientMockRecorder) FindLocalSRsForPool(ctx, poolID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLocalSRsForPool", reflect.TypeOf((*MockXoClient)(nil).FindLocalSRsForPool), ctx, poolID)
+}
+
 // FindVDIByVolumeName mocks base method.
 func (m *MockXoClient) FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error) {
 	m.ctrl.T.Helper()
@@ -205,6 +235,21 @@ func (m *MockXoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI)
 func (mr *MockXoClientMockRecorder) IsVDIUsedAnywhere(ctx, vdi any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsVDIUsedAnywhere", reflect.TypeOf((*MockXoClient)(nil).IsVDIUsedAnywhere), ctx, vdi)
+}
+
+// MigrateVDIAndWait mocks base method.
+func (m *MockXoClient) MigrateVDIAndWait(ctx context.Context, vdiID, targetSRID uuid.UUID) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MigrateVDIAndWait", ctx, vdiID, targetSRID)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MigrateVDIAndWait indicates an expected call of MigrateVDIAndWait.
+func (mr *MockXoClientMockRecorder) MigrateVDIAndWait(ctx, vdiID, targetSRID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MigrateVDIAndWait", reflect.TypeOf((*MockXoClient)(nil).MigrateVDIAndWait), ctx, vdiID, targetSRID)
 }
 
 // PBD mocks base method.
