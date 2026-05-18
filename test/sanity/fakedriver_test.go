@@ -45,7 +45,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 	mockXoClient.EXPECT().SR().Return(mockSR).AnyTimes()
 
 	mockXoClient.EXPECT().CreateNewVolume(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, _ string, _ string) (uuid.UUID, uuid.UUID, error) {
+		func(_ context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, _ string, _ string) (uuid.UUID, uuid.UUID, error) {
 			vdiID := uuid.Must(uuid.NewV4())
 			volumeId := uuid.Must(uuid.NewV4())
 			vdiStore.Lock()
@@ -53,7 +53,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 			vdiStore.byID[vdiID] = payloads.VDI{
 				ID:        vdiID,
 				SR:        srID,
-				NameLabel: diskName,
+				NameLabel: clients.BuildVDINameLabel(namePrefix, volumeId.String(), volumeName),
 				Size:      capacityBytes,
 				OtherConfig: map[string]string{
 					clients.VDIOtherConfigKeyPVName:   volumeName,

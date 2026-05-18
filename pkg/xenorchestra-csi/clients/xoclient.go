@@ -38,7 +38,7 @@ type XoClient interface {
 	ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error)
 	DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
 	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
-	CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
+	CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
 	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 	// FindVDIByVolumeName looks up a VDI by the Kubernetes PV name stored in
@@ -143,7 +143,7 @@ func (c xoClient) AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uu
 	return vbd, nil
 }
 
-func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error) {
+func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error) {
 	volumeId, err := uuid.NewV4()
 	if err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("failed to generate volume ID UUID: %w", err)
@@ -157,9 +157,9 @@ func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName 
 
 	vdiParams := payloads.VDICreateParams{
 		SRId:            srID,
-		NameLabel:       diskName,
+		NameLabel:       BuildVDINameLabel(namePrefix, volumeId.String(), volumeName),
 		VirtualSize:     capacityBytes,
-		NameDescription: "VDI managed by the Kubernetes CSI",
+		NameDescription: BuildVDINameDescription(volumeName),
 		OtherConfig:     otherConfig,
 	}
 	if clusterTag != "" {
@@ -275,7 +275,23 @@ func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*paylo
 	}
 	switch len(vdis) {
 	case 0:
-		return nil, ErrVolumeNotFound
+		// Fallback: search by name_label containing the volumeId.
+		// This handles the case where other_config was erased (e.g. after a XO restore).
+		// NOTE: This should be removed in a future major release once we can be sure other_config is always preserved.
+		klog.V(2).InfoS("No VDI found with other_config volume ID, falling back to name_label search", "volumeId", volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		vdis, err = c.VDI().GetAll(ctx, 2, fallbackFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list VDIs by name_label for volume ID %s: %w", volumeId, err)
+		}
+		switch len(vdis) {
+		case 0:
+			return nil, ErrVolumeNotFound
+		case 1:
+			return vdis[0], nil
+		default:
+			return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via name_label fallback", ErrVolumeIdAmbiguous, volumeId, len(vdis))
+		}
 	case 1:
 		return vdis[0], nil
 	default:

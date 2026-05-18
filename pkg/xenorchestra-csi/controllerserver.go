@@ -313,8 +313,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}
 	}
 
-	diskName := driver.vdiNamePrefix + volumeName
-	klog.V(5).InfoS("Creating volume", "diskName", diskName, "capacityBytes", capacityBytes)
+	klog.V(5).InfoS("Creating volume", "namePrefix", driver.vdiNamePrefix, "volumeName", volumeName, "capacityBytes", capacityBytes)
 
 	// Resolve which pool to provision into.
 	//
@@ -418,12 +417,12 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}, nil
 	}
 
-	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, diskName, capacityBytes, volumeName, DriverName, driver.clusterTag)
+	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, DriverName, driver.clusterTag)
 	if err != nil {
-		klog.ErrorS(err, "Failed to create VDI", "diskName", diskName, "capacityBytes", capacityBytes)
+		klog.ErrorS(err, "Failed to create VDI", "volumeName", volumeName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
 	}
-	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "volumeID", volumeID, "diskName", diskName)
+	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "volumeID", volumeID, "volumeName", volumeName)
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
