@@ -91,3 +91,62 @@ If the task fails or is interrupted, `ControllerPublishVolume` returns
 The driver checks `vdi.SR == localSR.ID` before initiating migration. If the VDI
 is already on the target host's local SR the migration step is skipped entirely.
 This makes `ControllerPublishVolume` safe to retry.
+
+---
+
+## Operational notes
+
+### Use `WaitForFirstConsumer`
+
+```yaml
+volumeBindingMode: WaitForFirstConsumer
+```
+
+This is **strongly recommended** for `storageType: local` StorageClasses. It
+ensures the scheduler picks a node before `CreateVolume` runs, so topology hints
+(`accessibility_requirements`) are available and the pool can be derived
+automatically (topology-aware mode).
+
+Without `WaitForFirstConsumer`, `CreateVolume` may be called before any node is
+known. In that case, the driver can still create the VDI on a local SR of the
+selected pool, but it may later need an additional migration at
+`ControllerPublishVolume` if the workload lands on a different host.
+
+### Every node must have a local SR
+
+`FindLocalSRForHost` returns `FailedPrecondition` if no local SR is found for the
+target host. Ensure every XCP-ng host in the pool has at least one accessible
+user-data local SR (e.g. `ext`, `lvm`, `zfs`).
+
+### StorageClass example
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-local
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  storageType: local
+  # poolId: "<xo-pool-uuid>"   # optional; omit for topology-aware mode
+```
+
+See `examples/csi-app-local-storage.yaml` for a complete PVC + Pod example.
+
+### Performance
+
+Local SRs bypass network storage latency. They are well-suited for
+latency-sensitive workloads (databases, caches) that do not require shared access
+or cross-node mobility.
+
+### Limitations
+
+- A VDI on a local SR **cannot** be attached to a VM on a different host. If the
+  VM is migrated without first migrating the VDI, XAPI will reject the VBD
+  attachment. The CSI driver handles this automatically via `ControllerPublishVolume`.
+- `ReadWriteMany` is not supported for local storage (not supported in general by
+  this driver today).
+- Volume expansion is not yet implemented.
