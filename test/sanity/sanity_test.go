@@ -139,7 +139,7 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		cfg := buildBaseTestConfig()
 
 		cfg.TestVolumeParameters = map[string]string{
-			"poolId": stub.PoolId,
+			xenorchestracsi.ParameterPoolID: stub.PoolId,
 		}
 
 		sc := sanity.GinkgoTest(cfg)
@@ -149,6 +149,31 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 	// The topology-aware suite runs all sanity tests without a poolId, relying on the driver to discover pools via XO tags.
 	ginkgo.Describe("Sanity Topology-aware 'no poolId'", func() {
 		cfg := buildBaseTestConfig()
+		cfg.TestVolumeParameters = map[string]string{
+			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeShared,
+		}
+		sc := sanity.GinkgoTest(cfg)
+		sc.Finalize()
+	})
+
+	// The local storage suite runs sanity tests with storageType=local, which requires additional driver logic to select pools and migrate volumes.
+	ginkgo.Describe("Sanity local storage topology-aware", func() {
+		cfg := buildBaseTestConfig()
+		cfg.TestVolumeParameters = map[string]string{
+			// "poolId":      stub.PoolId,
+			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeLocal,
+		}
+		sc := sanity.GinkgoTest(cfg)
+		sc.Finalize()
+	})
+
+	// The local storage explicit pool suite runs sanity tests with storageType=local and a fixed poolId, skipping the driver's topology-based pool selection logic.
+	ginkgo.Describe("Sanity local storage explicit pool", func() {
+		cfg := buildBaseTestConfig()
+		cfg.TestVolumeParameters = map[string]string{
+			xenorchestracsi.ParameterPoolID:      stub.PoolId,
+			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeLocal,
+		}
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
 	})

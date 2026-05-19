@@ -117,6 +117,40 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 		Device: &device,
 	}, nil).AnyTimes()
 	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockXoClient.EXPECT().FindLocalSRForHost(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
+		localSR := payloads.StorageRepository{
+			ID:          uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel:   "fake-local-sr",
+			Type:        "ext",
+			Container:   hostID,
+			Pool:        uuid.FromStringOrNil(stub.PoolId),
+			ContentType: "user",
+		}
+		return &localSR, nil
+	}).AnyTimes()
+	mockXoClient.EXPECT().FindLocalSRsForPool(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error) {
+		localSR := payloads.StorageRepository{
+			ID:          uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel:   "fake-local-sr",
+			Type:        "ext",
+			Pool:        poolID,
+			ContentType: "user",
+		}
+		return []*payloads.StorageRepository{&localSR}, nil
+	}).AnyTimes()
+	mockXoClient.EXPECT().MigrateVDIAndWait(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error) {
+		newVDI := uuid.Must(uuid.NewV4())
+		vdiStore.Lock()
+		defer vdiStore.Unlock()
+		if vdi, exists := vdiStore.byID[vdiID]; exists {
+			vdi.ID = newVDI
+			vdi.SR = targetSRID
+			delete(vdiStore.byID, vdiID)
+			vdiStore.byID[newVDI] = vdi
+		}
+		return newVDI, nil
+	}).AnyTimes()
+
 	mockXoClient.EXPECT().IsSRAttachedToHost(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	return xenorchestracsi.NewDriverWithDependencies(
