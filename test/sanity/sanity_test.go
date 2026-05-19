@@ -21,11 +21,16 @@ const (
 	sanityEndpoint = "unix:///tmp/xenorchestra-csi-sanity-test.sock"
 	driverName     = "csi.xenorchestra.vates.tech"
 	nodeName       = "sanity-node"
+	sockPath       = "/tmp/xenorchestra-csi-sanity-test.sock"
 )
 
 type CustomIDGenerator struct{}
 
-var _ sanity.IDGenerator = &CustomIDGenerator{}
+var (
+	_           sanity.IDGenerator = &CustomIDGenerator{}
+	fakeMounter *FakeMounter
+	tmpDir      string
+)
 
 func (d CustomIDGenerator) GenerateUniqueValidVolumeID() string {
 	return uuid.Must(uuid.NewV4()).String()
@@ -44,7 +49,7 @@ func (d CustomIDGenerator) GenerateInvalidNodeID() string {
 }
 
 func TestSanity(t *testing.T) {
-	fakeMounter := NewFakeMounter()
+	fakeMounter = NewFakeMounter()
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
 	driver, _ := NewFakeDriver(
 		t,
@@ -57,12 +62,11 @@ func TestSanity(t *testing.T) {
 
 	go func() {
 		if err := driver.Run(t.Context()); err != nil {
-			t.Errorf("driver.Run: %v", err)
+			t.Fatalf("driver.Run: %v", err)
 		}
 	}()
 
 	// Wait for the driver to be ready: socket must exist and accept connections.
-	sockPath := "/tmp/xenorchestra-csi-sanity-test.sock"
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(sockPath); err == nil {
@@ -73,7 +77,8 @@ func TestSanity(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	// Use temp dir and cleanup any target paths left behind by failed tests
-	tmpDir, err := os.MkdirTemp("", "csi-sanity-*")
+	var err error
+	tmpDir, err = os.MkdirTemp("", "csi-sanity-*")
 	if err != nil {
 		t.Fatalf("Failed to create sanity temp working dir: %v", err)
 	}
@@ -82,6 +87,12 @@ func TestSanity(t *testing.T) {
 		os.Remove(sockPath)
 	})
 
+	gomega.RegisterFailHandler(ginkgo.Fail)
+
+	ginkgo.RunSpecs(t, "CSI Driver Sanity Suite")
+}
+
+func buildBaseTestConfig() *sanity.TestConfig {
 	// Register sanity tests then run them with a custom SuiteConfig to skip
 	// tests that require unimplemented features (CreateVolume, etc.).
 	cfg := sanity.NewTestConfig()
@@ -92,9 +103,6 @@ func TestSanity(t *testing.T) {
 	}
 	cfg.ControllerDialOptions = cfg.DialOptions
 
-	cfg.TestVolumeParameters = map[string]string{
-		"poolId": stub.PoolId,
-	}
 	cfg.IDGen = &CustomIDGenerator{}
 	cfg.TargetPath = path.Join(tmpDir, "mount")
 	cfg.StagingPath = path.Join(tmpDir, "staging")
@@ -116,12 +124,21 @@ func TestSanity(t *testing.T) {
 	cfg.RemoveTargetPath = func(path string) error {
 		return fakeMounter.Unmount(path)
 	}
-	sc := sanity.GinkgoTest(&cfg)
 
-	gomega.RegisterFailHandler(ginkgo.Fail)
-
-	suiteConfig, reporterConfig := ginkgo.GinkgoConfiguration()
-
-	ginkgo.RunSpecs(t, "CSI Driver Sanity Suite", suiteConfig, reporterConfig)
-	sc.Finalize()
+	return &cfg
 }
+
+// Describe here the sanity test suite(s) to run.
+var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
+	// The explicit pool suite runs all sanity tests with a fixed poolId parameter.
+	ginkgo.Describe("Sanity explicit pool", func() {
+		cfg := buildBaseTestConfig()
+
+		cfg.TestVolumeParameters = map[string]string{
+			"poolId": stub.PoolId,
+		}
+
+		sc := sanity.GinkgoTest(cfg)
+		sc.Finalize()
+	})
+})
