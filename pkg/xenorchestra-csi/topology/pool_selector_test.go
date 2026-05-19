@@ -19,6 +19,7 @@ package topology
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -265,4 +266,47 @@ func TestSelectPoolAndStorage_NoViablePool(t *testing.T) {
 	_, _, err := SelectPoolAndStorage(context.Background(), mockSR, mockPool, []uuid.UUID{poolUUID1, poolUUID2})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPoolNotViable)
+}
+
+// --- TaggedPoolIDs ---
+
+func tagFilter(tag string) string {
+	return fmt.Sprintf("tags:/^%s$/", tag)
+}
+
+const testK8sPoolTag = "k8s-pool"
+
+func TestTaggedPoolIDs_FindsTaggedPools(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockPool := xoLibMock.NewMockPool(ctrl)
+
+	mockPool.EXPECT().GetAll(gomock.Any(), 0, tagFilter(testK8sPoolTag)).Return([]*payloads.Pool{
+		{ID: poolUUID1, NameLabel: "k8s-pool", Tags: []string{testK8sPoolTag}},
+		{ID: poolUUID3, NameLabel: "k8s-pool-2", Tags: []string{"another", testK8sPoolTag}},
+	}, nil)
+
+	ids, err := TaggedPoolIDs(context.Background(), mockPool, testK8sPoolTag)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{poolUUID1, poolUUID3}, ids)
+}
+
+func TestTaggedPoolIDs_NoMatchingPools(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockPool := xoLibMock.NewMockPool(ctrl)
+
+	mockPool.EXPECT().GetAll(gomock.Any(), 0, tagFilter(testK8sPoolTag)).Return([]*payloads.Pool{}, nil)
+
+	ids, err := TaggedPoolIDs(context.Background(), mockPool, testK8sPoolTag)
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+}
+
+func TestTaggedPoolIDs_XoClientError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockPool := xoLibMock.NewMockPool(ctrl)
+
+	mockPool.EXPECT().GetAll(gomock.Any(), 0, tagFilter(testK8sPoolTag)).Return(nil, errors.New("xo unavailable"))
+
+	_, err := TaggedPoolIDs(context.Background(), mockPool, testK8sPoolTag)
+	require.Error(t, err)
 }

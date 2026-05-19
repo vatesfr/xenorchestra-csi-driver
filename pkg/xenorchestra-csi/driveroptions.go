@@ -53,6 +53,10 @@ type DriverOptions struct {
 	// XO instance. Defaults to DefaultClusterTag ("k8s-managed"). Set to "" to disable
 	// tagging and filtering entirely.
 	ClusterTag string
+	// KubernetesPoolTag identifies Xen Orchestra pools that should be considered for
+	// automatic VDI placement when no poolId or topology constraints are provided.
+	// Defaults to DefaultKubernetesPoolTag ("k8s-pool").
+	KubernetesPoolTag string
 }
 
 func (o *DriverOptions) AddFlags() *flag.FlagSet {
@@ -65,6 +69,7 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 	o.NodeMetadataSource = NodeMetadataSourceKubernetes
 	o.VDINamePrefix = DefaultVDINamePrefix
 	o.ClusterTag = DefaultClusterTag
+	o.KubernetesPoolTag = DefaultKubernetesPoolTag
 	fs.StringVar(&o.NodeName, "node-name", "", "Node name")
 	fs.StringVar(&o.DriverName, "driver-name", DriverName, "Driver name")
 	fs.StringVar(&o.Endpoint, "endpoint", "unix://tmp/csi.sock", "CSI endpoint")
@@ -75,6 +80,9 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 		"Tag added to all VDIs created by this driver. "+
 			"Use a unique value per cluster when running multiple clusters against the same XO instance. "+
 			"Set to \"\" to disable tagging and filtering.")
+	fs.StringVar(&o.KubernetesPoolTag, "kubernetes-pool-tag", DefaultKubernetesPoolTag,
+		"Tag added to Xen Orchestra pools eligible for automatic volume placement. "+
+			"Used when no poolId or topology constraints are provided.")
 	fs.Func("node-metadata-source",
 		`Source used by the node plugin to resolve pool ID and VM identity.
 Allowed values:

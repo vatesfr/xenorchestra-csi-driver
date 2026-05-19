@@ -34,6 +34,11 @@ const (
 	// the same Xen Orchestra instance (e.g. "k8s-prod", "k8s-staging").
 	DefaultClusterTag = "k8s-managed"
 
+	// DefaultKubernetesPoolTag is the tag that must be present on a Xen Orchestra
+	// pool for automatic discovery when no accessibility_requirements topology or
+	// poolId StorageClass parameter is provided.
+	DefaultKubernetesPoolTag = "k8s-pool"
+
 	// VolumeContextKeySRID is the key in the PV's volumeAttributes (CSI VolumeContext)
 	// that stores the UUID of the Xen Orchestra Storage Repository backing the VDI.
 	VolumeContextKeySRID = "srId"

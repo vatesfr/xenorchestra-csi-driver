@@ -37,6 +37,26 @@ import (
 // pool topology segment at all.
 var ErrNoPoolInTopology = fmt.Errorf("accessibility_requirements contain no %q segment", xok8s.XOLabelTopologyPoolID)
 
+// TaggedPoolIDs fetches all pools from Xen Orchestra that carry the given tag
+// and returns their UUIDs. It is used as a fallback when no
+// accessibility_requirements topology or poolId StorageClass parameter is
+// provided, allowing the driver to automatically discover eligible pools.
+//
+// If no pool matches the tag, an empty (non-nil) slice is returned with no error.
+// To use the result, callers should check both len(result) == 0 and err != nil.
+func TaggedPoolIDs(ctx context.Context, poolClient library.Pool, tag string) ([]uuid.UUID, error) {
+	pools, err := poolClient.GetAll(ctx, 0, fmt.Sprintf("tags:/^%s$/", tag))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pools: %w", err)
+	}
+
+	var ids []uuid.UUID
+	for _, pool := range pools {
+		ids = append(ids, pool.ID)
+	}
+	return ids, nil
+}
+
 // OrderedPoolIDs returns a deduplicated, ordered list of pool UUIDs derived
 // from the accessibility requirements, following the CSI spec ordering:
 //
