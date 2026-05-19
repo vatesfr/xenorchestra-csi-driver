@@ -151,10 +151,19 @@ func newMockPool(ctrl *gomock.Controller) *xoLibMock.MockPool {
 				ID:        id,
 				NameLabel: "fake-pool",
 				DefaultSR: uuid.FromStringOrNil(stub.DefaultSRId),
+				Tags:      []string{xenorchestracsi.DefaultKubernetesPoolTag},
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such Pool %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"Pool\"\n  }\n}", id, id)
 	}).AnyTimes()
+	mockPool.EXPECT().GetAll(gomock.Any(), gomock.Any(), fmt.Sprintf("tags:/^%s$/", xenorchestracsi.DefaultKubernetesPoolTag)).Return([]*payloads.Pool{
+		{
+			ID:        uuid.FromStringOrNil(stub.PoolId),
+			NameLabel: "fake-pool",
+			DefaultSR: uuid.FromStringOrNil(stub.DefaultSRId),
+			Tags:      []string{xenorchestracsi.DefaultKubernetesPoolTag},
+		},
+	}, nil).AnyTimes()
 	return mockPool
 }
 
@@ -175,6 +184,7 @@ func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 		delete(vdiStore.byID, id)
 		return nil
 	}).AnyTimes()
+	mockVDI.EXPECT().AddTag(gomock.Any(), gomock.Any(), xenorchestracsi.DefaultClusterTag).Return(nil).AnyTimes()
 
 	return mockVDI
 }

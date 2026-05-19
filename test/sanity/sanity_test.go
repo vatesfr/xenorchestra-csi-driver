@@ -54,15 +54,19 @@ func TestSanity(t *testing.T) {
 	driver, _ := NewFakeDriver(
 		t,
 		&xenorchestracsi.DriverOptions{
-			DriverName: driverName,
-			NodeName:   nodeName,
-			Endpoint:   sanityEndpoint,
+			DriverName:         driverName,
+			NodeName:           nodeName,
+			Endpoint:           sanityEndpoint,
+			KubernetesPoolTag:  xenorchestracsi.DefaultKubernetesPoolTag,
+			NodeMetadataSource: xenorchestracsi.NodeMetadataSourceKubernetes,
+			VDINamePrefix:      xenorchestracsi.DefaultVDINamePrefix,
+			ClusterTag:         xenorchestracsi.DefaultClusterTag,
 		},
 		fakeMounter)
 
 	go func() {
 		if err := driver.Run(t.Context()); err != nil {
-			t.Fatalf("driver.Run: %v", err)
+			t.Errorf("driver.Run: %v", err)
 		}
 	}()
 
@@ -138,6 +142,13 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 			"poolId": stub.PoolId,
 		}
 
+		sc := sanity.GinkgoTest(cfg)
+		sc.Finalize()
+	})
+
+	// The topology-aware suite runs all sanity tests without a poolId, relying on the driver to discover pools via XO tags.
+	ginkgo.Describe("Sanity Topology-aware 'no poolId'", func() {
+		cfg := buildBaseTestConfig()
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
 	})
