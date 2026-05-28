@@ -93,299 +93,307 @@ func expectedLocalSRsForPoolFilter(poolID uuid.UUID) string {
 // FindLocalSRForHost
 // ---------------------------------------------------------------------------
 
-func TestFindLocalSRForHost_ReturnsSR(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+func TestFindLocalSRForHost(t *testing.T) {
+	t.Run("ReturnsSR", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	sr := &payloads.StorageRepository{ID: localSRID, Shared: false, ContentType: "user"}
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
-		Return([]*payloads.StorageRepository{sr}, nil)
+		sr := &payloads.StorageRepository{ID: localSRID, Shared: false, ContentType: "user"}
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
+			Return([]*payloads.StorageRepository{sr}, nil)
 
-	got, err := c.FindLocalSRForHost(context.Background(), hostUUID)
-	require.NoError(t, err)
-	assert.Equal(t, sr, got)
-}
+		got, err := c.FindLocalSRForHost(context.Background(), hostUUID)
+		require.NoError(t, err)
+		assert.Equal(t, sr, got)
+	})
 
-func TestFindLocalSRForHost_NoSRFound(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+	t.Run("NoSRFound", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
-		Return([]*payloads.StorageRepository{}, nil)
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
+			Return([]*payloads.StorageRepository{}, nil)
 
-	_, err := c.FindLocalSRForHost(context.Background(), hostUUID)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), hostUUID.String())
-}
+		_, err := c.FindLocalSRForHost(context.Background(), hostUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), hostUUID.String())
+	})
 
-func TestFindLocalSRForHost_APIError(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+	t.Run("APIError", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	apiErr := errors.New("connection refused")
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
-		Return(nil, apiErr)
+		apiErr := errors.New("connection refused")
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 1, expectedLocalSRFilter(hostUUID)).
+			Return(nil, apiErr)
 
-	_, err := c.FindLocalSRForHost(context.Background(), hostUUID)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, apiErr)
+		_, err := c.FindLocalSRForHost(context.Background(), hostUUID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
 }
 
 // ---------------------------------------------------------------------------
 // MigrateVDIAndWait
 // ---------------------------------------------------------------------------
 
-func TestMigrateVDIAndWait_Success(t *testing.T) {
-	c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+func TestMigrateVDIAndWait(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
 
-	mockVDI.EXPECT().
-		Migrate(gomock.Any(), vdiUUID, localSRID).
-		Return(taskID, nil)
-	mockTask.EXPECT().
-		Wait(gomock.Any(), taskID).
-		Return(&payloads.Task{
-			Status: payloads.Success,
-			Result: payloads.Result{ID: newVDIUUID},
-		}, nil)
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: newVDIUUID},
+			}, nil)
 
-	got, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
-	require.NoError(t, err)
-	assert.Equal(t, newVDIUUID, got)
-}
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		require.NoError(t, err)
+		assert.Equal(t, newVDIUUID, got)
+	})
 
-func TestMigrateVDIAndWait_MigrateError(t *testing.T) {
-	c, mockVDI, _ := newClientWithMockVDIAndTask(t)
+	t.Run("MigrateError", func(t *testing.T) {
+		c, mockVDI, _ := newClientWithMockVDIAndTask(t)
 
-	migrateErr := errors.New("SR not found")
-	mockVDI.EXPECT().
-		Migrate(gomock.Any(), vdiUUID, localSRID).
-		Return("", migrateErr)
+		migrateErr := errors.New("SR not found")
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return("", migrateErr)
 
-	_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, migrateErr)
-}
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, migrateErr)
+	})
 
-func TestMigrateVDIAndWait_TaskWaitError(t *testing.T) {
-	c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+	t.Run("TaskWaitError", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
 
-	waitErr := errors.New("context deadline exceeded")
-	mockVDI.EXPECT().
-		Migrate(gomock.Any(), vdiUUID, localSRID).
-		Return(taskID, nil)
-	mockTask.EXPECT().
-		Wait(gomock.Any(), taskID).
-		Return(nil, waitErr)
+		waitErr := errors.New("context deadline exceeded")
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(nil, waitErr)
 
-	_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, waitErr)
-}
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, waitErr)
+	})
 
-func TestMigrateVDIAndWait_TaskFailed(t *testing.T) {
-	c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+	t.Run("TaskFailed", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
 
-	mockVDI.EXPECT().
-		Migrate(gomock.Any(), vdiUUID, localSRID).
-		Return(taskID, nil)
-	mockTask.EXPECT().
-		Wait(gomock.Any(), taskID).
-		Return(&payloads.Task{
-			Status: payloads.Failure,
-			Result: payloads.Result{Message: "random failure message from XAPI"},
-		}, nil)
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Failure,
+				Result: payloads.Result{Message: "random failure message from XAPI"},
+			}, nil)
 
-	_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), string(payloads.Failure))
-	assert.Contains(t, err.Error(), "random failure message from XAPI")
-}
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), string(payloads.Failure))
+		assert.Contains(t, err.Error(), "random failure message from XAPI")
+	})
 
-func TestMigrateVDIAndWait_ResultNilID(t *testing.T) {
-	c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+	t.Run("ResultNilID", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
 
-	mockVDI.EXPECT().
-		Migrate(gomock.Any(), vdiUUID, localSRID).
-		Return(taskID, nil)
-	mockTask.EXPECT().
-		Wait(gomock.Any(), taskID).
-		Return(&payloads.Task{
-			Status: payloads.Success,
-			Result: payloads.Result{ID: uuid.Nil},
-		}, nil)
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: uuid.Nil},
+			}, nil)
 
-	_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
-	require.Error(t, err)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		require.Error(t, err)
+	})
 }
 
 // ---------------------------------------------------------------------------
 // GetVDIByVolumeId
 // ---------------------------------------------------------------------------
 
-func TestGetVDIByVolumeId_FoundViaOtherConfig(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+func TestGetVDIByVolumeId(t *testing.T) {
+	t.Run("FoundViaOtherConfig", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000010"
-	vdi := &payloads.VDI{
-		ID: vdiUUID,
-		OtherConfig: map[string]string{
-			VDIOtherConfigKeyVolumeId: volumeId,
-		},
-	}
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{vdi}, nil)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000010"
+		vdi := &payloads.VDI{
+			ID: vdiUUID,
+			OtherConfig: map[string]string{
+				VDIOtherConfigKeyVolumeId: volumeId,
+			},
+		}
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{vdi}, nil)
 
-	got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.NoError(t, err)
-	assert.Equal(t, vdi, got)
-}
+		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, got)
+	})
 
-func TestGetVDIByVolumeId_FallbackViaNameLabel(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("FallbackViaNameLabel", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000011"
-	vdi := &payloads.VDI{
-		ID:        vdiUUID,
-		NameLabel: "csi-" + volumeId + "-pvc-xyz",
-	}
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{}, nil)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, fallbackFilter).
-		Return([]*payloads.VDI{vdi}, nil)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000011"
+		vdi := &payloads.VDI{
+			ID:        vdiUUID,
+			NameLabel: "csi-" + volumeId + "-pvc-xyz",
+		}
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{vdi}, nil)
 
-	got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.NoError(t, err)
-	assert.Equal(t, vdi, got)
-}
+		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, got)
+	})
 
-func TestGetVDIByVolumeId_NotFoundInBothLookups(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("NotFoundInBothLookups", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000012"
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{}, nil)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, fallbackFilter).
-		Return([]*payloads.VDI{}, nil)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000012"
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
 
-	_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrVolumeNotFound)
-}
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeNotFound)
+	})
 
-func TestGetVDIByVolumeId_AmbiguousViaOtherConfig(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("AmbiguousViaOtherConfig", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000013"
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000013"
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
 
-	_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrVolumeIdAmbiguous)
-}
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeIdAmbiguous)
+	})
 
-func TestGetVDIByVolumeId_AmbiguousViaNameLabelFallback(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("AmbiguousViaNameLabelFallback", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000014"
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{}, nil)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, fallbackFilter).
-		Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000014"
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
 
-	_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrVolumeIdAmbiguous)
-}
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeIdAmbiguous)
+	})
 
-func TestGetVDIByVolumeId_PrimaryAPIError(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("PrimaryAPIError", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000015"
-	apiErr := errors.New("connection refused")
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return(nil, apiErr)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000015"
+		apiErr := errors.New("connection refused")
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return(nil, apiErr)
 
-	_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, apiErr)
-}
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
 
-func TestGetVDIByVolumeId_FallbackAPIError(t *testing.T) {
-	c, mockVDI := newClientWithMockVDI(t)
+	t.Run("FallbackAPIError", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
 
-	volumeId := "aaaaaaaa-0000-0000-0000-000000000016"
-	apiErr := errors.New("timeout")
-	primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
-	fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, primaryFilter).
-		Return([]*payloads.VDI{}, nil)
-	mockVDI.EXPECT().
-		GetAll(gomock.Any(), 2, fallbackFilter).
-		Return(nil, apiErr)
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000016"
+		apiErr := errors.New("timeout")
+		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return(nil, apiErr)
 
-	_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, apiErr)
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
 }
 
 // ---------------------------------------------------------------------------
 // FindLocalSRsForPool
 // ---------------------------------------------------------------------------
 
-func TestFindLocalSRsForPool_ReturnsSRs(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+func TestFindLocalSRsForPool(t *testing.T) {
+	t.Run("ReturnsSRs", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	sr1 := &payloads.StorageRepository{ID: localSRID}
-	sr2 := &payloads.StorageRepository{ID: localSRID2}
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
-		Return([]*payloads.StorageRepository{sr1, sr2}, nil)
+		sr1 := &payloads.StorageRepository{ID: localSRID}
+		sr2 := &payloads.StorageRepository{ID: localSRID2}
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
+			Return([]*payloads.StorageRepository{sr1, sr2}, nil)
 
-	got, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
-	require.NoError(t, err)
-	assert.Equal(t, []*payloads.StorageRepository{sr1, sr2}, got)
-}
+		got, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
+		require.NoError(t, err)
+		assert.Equal(t, []*payloads.StorageRepository{sr1, sr2}, got)
+	})
 
-func TestFindLocalSRsForPool_NoSRFound(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+	t.Run("NoSRFound", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
-		Return([]*payloads.StorageRepository{}, nil)
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
+			Return([]*payloads.StorageRepository{}, nil)
 
-	_, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
-	require.Error(t, err)
-}
+		_, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
+		require.Error(t, err)
+	})
 
-func TestFindLocalSRsForPool_APIError(t *testing.T) {
-	c, mockSR := newClientWithMockSR(t)
+	t.Run("APIError", func(t *testing.T) {
+		c, mockSR := newClientWithMockSR(t)
 
-	apiErr := errors.New("connection refused")
-	mockSR.EXPECT().
-		GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
-		Return(nil, apiErr)
+		apiErr := errors.New("connection refused")
+		mockSR.EXPECT().
+			GetAll(gomock.Any(), 0, expectedLocalSRsForPoolFilter(poolUUID)).
+			Return(nil, apiErr)
 
-	_, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, apiErr)
+		_, err := c.FindLocalSRsForPool(context.Background(), poolUUID)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
 }
