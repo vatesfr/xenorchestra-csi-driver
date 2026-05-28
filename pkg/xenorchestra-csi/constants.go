@@ -23,8 +23,8 @@ const (
 	// pool's DefaultSR as the target storage repository.
 	ParameterPoolID = "poolId"
 
-	// DefaultVDINamePrefix is prepended to the Kubernetes volume name when
-	// constructing the VDI name label in Xen Orchestra. Override it at
+	// DefaultVDINamePrefix is prepended to the VDI name label in Xen Orchestra.
+	// See BuildVDINameLabel for the full naming format. Override it at
 	// driver startup with the --vdi-name-prefix flag.
 	DefaultVDINamePrefix = "csi-"
 
@@ -49,4 +49,23 @@ const (
 	// VolumeContextKeyPoolName is the key in the PV's volumeAttributes (CSI VolumeContext)
 	// that stores the human-readable name of the Xen Orchestra pool.
 	VolumeContextKeyPoolName = "poolName"
+
+	// ParameterStorageType is an optional StorageClass parameter.
+	// Valid values: "shared" (default) or "local".
+	// - "shared": VDI is created on pool.DefaultSR and used as-is (current behavior).
+	// - "local":  VDI is created on random local SR of the pool at provision time, then migrated
+	//             to the target host's local SR in ControllerPublishVolume before
+	//             being attached to the VM.
+	ParameterStorageType = "storageType"
+
+	// StorageTypeShared is the default storageType: use pool shared storage.
+	StorageTypeShared = "shared"
+
+	// StorageTypeLocal migrates the VDI to the target host's local SR in
+	// ControllerPublishVolume before attaching.
+	StorageTypeLocal = "local"
+
+	// VolumeContextKeyStorageType carries the storageType value through the CSI
+	// lifecycle (CreateVolume → ControllerPublishVolume).
+	VolumeContextKeyStorageType = "storageType"
 )

@@ -38,7 +38,7 @@ type XoClient interface {
 	ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error)
 	DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
 	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
-	CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
+	CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
 	IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*payloads.VBD, error)
 	// FindVDIByVolumeName looks up a VDI by the Kubernetes PV name stored in
@@ -57,6 +57,18 @@ type XoClient interface {
 	// and remains stable across SR migrations.
 	// Returns ErrVolumeNotFound if no VDI matches, ErrVolumeIdAmbiguous if multiple match.
 	GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error)
+
+	// FindLocalSRForHost returns the first local (non-shared) user SR whose
+	// container is the given host. Returns an error if none is found.
+	FindLocalSRForHost(ctx context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error)
+
+	// FindLocalSRsForPool returns all local (non-shared) user SRs belonging to
+	// the given pool. Returns an error if the API call fails or none are found.
+	FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error)
+
+	// MigrateVDIAndWait migrates vdiID to targetSRID and blocks until the task
+	// completes. Returns the new VDI UUID assigned by XAPI after migration.
+	MigrateVDIAndWait(ctx context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error)
 }
 
 type xoClient struct {
@@ -131,7 +143,7 @@ func (c xoClient) AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uu
 	return vbd, nil
 }
 
-func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error) {
+func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, createdBy string, clusterTag string) (uuid.UUID, uuid.UUID, error) {
 	volumeId, err := uuid.NewV4()
 	if err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("failed to generate volume ID UUID: %w", err)
@@ -145,9 +157,9 @@ func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, diskName 
 
 	vdiParams := payloads.VDICreateParams{
 		SRId:            srID,
-		NameLabel:       diskName,
+		NameLabel:       BuildVDINameLabel(namePrefix, volumeId.String(), volumeName),
 		VirtualSize:     capacityBytes,
-		NameDescription: "VDI managed by the Kubernetes CSI",
+		NameDescription: BuildVDINameDescription(volumeName),
 		OtherConfig:     otherConfig,
 	}
 	if clusterTag != "" {
@@ -204,15 +216,12 @@ func (c xoClient) IsVDIUsedAnywhere(ctx context.Context, vdi *payloads.VDI) ([]*
 
 // IsSRAttachedToHost checks that the given SR is connected (via a plugged PBD) to the given host.
 func (c xoClient) IsSRAttachedToHost(ctx context.Context, srID uuid.UUID, hostID uuid.UUID) error {
-	pbds, err := c.PBD().GetAll(ctx, 1, fmt.Sprintf("SR:%s host:%s", srID, hostID))
+	pbds, err := c.PBD().GetAll(ctx, 1, fmt.Sprintf("SR:%s host:%s attached?", srID, hostID))
 	if err != nil {
 		return fmt.Errorf("failed to list PBDs for SR %s on host %s: %w", srID, hostID, err)
 	}
 	if len(pbds) == 0 {
-		return fmt.Errorf("SR %s has no PBD for host %s; the SR may not be shared with this host", srID, hostID)
-	}
-	if !pbds[0].Attached {
-		return fmt.Errorf("SR %s is not connected to host %s (PBD %s is unplugged)", srID, hostID, pbds[0].ID)
+		return fmt.Errorf("SR %s is not connected to host %s (no plugged PBD found)", srID, hostID)
 	}
 	return nil
 }
@@ -266,7 +275,23 @@ func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*paylo
 	}
 	switch len(vdis) {
 	case 0:
-		return nil, ErrVolumeNotFound
+		// Fallback: search by name_label containing the volumeId.
+		// This handles the case where other_config was erased (e.g. after a XO restore).
+		// NOTE: This should be removed in a future major release once we can be sure other_config is always preserved.
+		klog.V(2).InfoS("No VDI found with other_config volume ID, falling back to name_label search", "volumeId", volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		vdis, err = c.VDI().GetAll(ctx, 2, fallbackFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list VDIs by name_label for volume ID %s: %w", volumeId, err)
+		}
+		switch len(vdis) {
+		case 0:
+			return nil, ErrVolumeNotFound
+		case 1:
+			return vdis[0], nil
+		default:
+			return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via name_label fallback", ErrVolumeIdAmbiguous, volumeId, len(vdis))
+		}
 	case 1:
 		return vdis[0], nil
 	default:
@@ -288,4 +313,46 @@ func (c xoClient) FindVDIByVolumeName(ctx context.Context, volumeName string) (*
 	default:
 		return nil, "", fmt.Errorf("%w: volumeName=%s matched %d VDIs", ErrVolumeNameAmbiguous, volumeName, len(vdis))
 	}
+}
+
+func (c xoClient) FindLocalSRForHost(ctx context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
+	filter := fmt.Sprintf("content_type:user !shared? !inMaintenanceMode? $PBDs:length:>=1 $container:%s", hostID)
+	srs, err := c.SR().GetAll(ctx, 1, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list local SRs for host %s: %w", hostID, err)
+	}
+	if len(srs) == 0 {
+		return nil, fmt.Errorf("no local SR with a connected PBD found on host %s", hostID)
+	}
+	return srs[0], nil
+}
+
+func (c xoClient) FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error) {
+	filter := fmt.Sprintf("content_type:user !shared? !inMaintenanceMode? $PBDs:length:>=1 $pool:%s", poolID)
+	srs, err := c.SR().GetAll(ctx, 0, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list local SRs for pool %s: %w", poolID, err)
+	}
+	if len(srs) == 0 {
+		return nil, fmt.Errorf("no local SR with a connected PBD found in pool %s", poolID)
+	}
+	return srs, nil
+}
+
+func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error) {
+	taskID, err := c.VDI().Migrate(ctx, vdiID, targetSRID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to start VDI migration (vdiID=%s targetSR=%s): %w", vdiID, targetSRID, err)
+	}
+	task, err := c.Task().Wait(ctx, taskID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to wait for VDI migration task %s: %w", taskID, err)
+	}
+	if task.Status != payloads.Success {
+		return uuid.Nil, fmt.Errorf("VDI migration task %s finished with status %q: %s", taskID, task.Status, task.Result.Message)
+	}
+	if task.Result.ID == uuid.Nil {
+		return uuid.Nil, fmt.Errorf("VDI migration task %s succeeded but returned no new VDI UUID", taskID)
+	}
+	return task.Result.ID, nil
 }

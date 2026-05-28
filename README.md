@@ -23,6 +23,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 - Static volume provisioning (use an existing VDI by UUID).
 - Dynamic volume provisioning (automatically create a VDI from a StorageClass).
+- Local storage support: pin VDIs to a host-local SR with automatic migration on reschedule.
 
 ## Prerequisite
 
@@ -36,8 +37,40 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 - [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static and dynamic provisioning.
 - [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
-- [Migration v0.2.0 to v0.3.0](docs/migrations/v0.2.0-to-v0.3.0.md) – backfill `other-config:kubernetes_volume_id` on legacy VDIs.
 - [Reference: Volume Handle and Volume ID in v0.3.0](docs/references/volume-handle-and-volume-id-v0.3.0.md) – details about stable CSI identity semantics.
+- [Reference: VDI Lookup and Identification](docs/references/vdi-lookup-and-identification.md) – how VDIs are located, `other_config` erasure, fallback behaviour, and limitations.
+- [Reference: Local Storage: VDI Placement and Migration](docs/references/local-storage.md) – SR selection, VDI migration, idempotency, and VM live-migration behaviour.
+
+## Version migrations
+
+When upgrading between versions, some releases require or recommend metadata
+changes to existing VDIs. Each guide is self-contained and includes rollback
+instructions.
+
+- [v0.2.0 to v0.3.0](docs/migrations/v0.2.0-to-v0.3.0.md) – **required** — backfill `other-config:kubernetes_volume_id` on legacy VDIs.
+- [v0.3.0 to v0.4.0](docs/migrations/v0.3.0-to-v0.4.0.md) – **optional** — backfill `name_label` with volume ID for pre-v0.4.0 VDIs (recommended before any VDI migration).
+
+## Limitations
+
+### Do not rename CSI-managed VDIs in Xen Orchestra
+
+The driver uses the VDI `name_label` as a fallback lookup when the
+`other_config:kubernetes_volume_id` key is missing (e.g. after a VDI
+migration). The `name_label` is set at creation time
+to `<prefix><volumeId>-<volumeName>`.
+
+**Renaming a VDI in Xen Orchestra breaks this fallback.** If `other_config`
+has also been erased, the driver will no longer be able to locate the VDI and
+volume operations (`DeleteVolume`, `ControllerUnpublishVolume`) will fail  and
+the VDI will be considered deleted.
+
+CSI-managed VDIs are identifiable by:
+- the `csi-` prefix in their `name_label` (or the prefix set with the flag `--vdi-name-prefix`),
+- the `kubernetes_created_by` key in their `other_config`,
+- the `name_description` field set to `VDI managed by the Kubernetes CSI; pv-name=<pv-name>`.
+
+See [VDI Lookup and Identification](docs/references/vdi-lookup-and-identification.md)
+for full details and manual recovery steps.
 
 ## Install driver on a Kubernetes cluster
 
@@ -105,6 +138,7 @@ an error is returned if they are incompatible.
 Name | Meaning | Example | Required | Default
 --- | --- | --- | --- | ---
 `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | No | —
+`storageType` | Storage placement: `shared` (pool default SR) or `local` (host-local SR, migrated at attach time). | `local` | No | `shared`
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -181,10 +215,11 @@ allowVolumeExpansion: false
 - [x] `poolId` validation against `accessibility_requirements` requisite topologies
 - [x] `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — `AccessibleTopology` returned in `CreateVolumeResponse`, topology requirements honoured in `CreateVolumeRequest`
 - [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
-- [ ] Cluster Topology support
+- [x] Cluster Topology support
 - [ ] Multi-SR support (migration...)
-- [ ] Multi-pool support
-- [ ] XO CCM
+- [x] Local SR support (`storageType: local` — VDI migration to host-local SR in `ControllerPublishVolume`)
+- [x] Multi-pool support
+- [x] XO CCM
 
 ## Contributing
 

@@ -45,8 +45,8 @@ type DriverOptions struct {
 	ConfigFile string
 	// NodeMetadataSource selects how the node plugin resolves pool ID and VM identity.
 	NodeMetadataSource NodeMetadataSource
-	// VDINamePrefix is prepended to the Kubernetes volume name when constructing
-	// the VDI name label in Xen Orchestra. Defaults to DefaultVDINamePrefix ("csi-").
+	// VDINamePrefix is prepended to the VDI name label in Xen Orchestra.
+	// See xenorchestracsi.BuildVDINameLabel for the full format.
 	VDINamePrefix string
 	// ClusterTag is added to every VDI created by this driver and used to filter
 	// VDIs. Use a unique value per cluster when running multiple clusters against the same

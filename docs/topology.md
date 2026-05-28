@@ -60,9 +60,12 @@ in `AccessibleTopology`. This segment was removed for the following reasons:
   host is not only unnecessary but actively harmful for workload distribution.
 
 - **Local SRs** — For SRs local to a single host (raw `lvm`, `ext`, `btrfs`…) host
-  affinity is meaningful. However this use case requires a more nuanced mechanism
-  (dynamic SR topology via the CCM, not a static value in `NodeGetInfo`) and is not
-  yet implemented.
+  affinity is meaningful. The driver handles this via the `storageType: local`
+  StorageClass parameter: in `ControllerPublishVolume` the VDI is migrated to the
+  target host's local SR before being attached to the VM. Because migration changes
+  the VDI UUID, the PVC UID stored in `VDI.other_config` is used to re-locate the
+  VDI after VM live-migration. See the
+  [Local Storage reference](references/local-storage.md) for full details.
 
 ## Cross-pool migration restriction
 

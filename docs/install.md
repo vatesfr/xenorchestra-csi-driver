@@ -244,6 +244,37 @@ allowVolumeExpansion: false
 See [Topology and Placement](topology.md) for a detailed explanation of how pool
 selection works in each mode.
 
+##### Local SR (host-pinned)
+
+Set `storageType: local`. The driver creates the VDI on one of the pool local SRs at
+provision time, then migrates it to the target host local SR in
+`ControllerPublishVolume` before attaching it to the VM.
+
+This mode requires `volumeBindingMode: WaitForFirstConsumer` (so the target node
+is known before provisioning) and every host must have at least one
+accessible local user-data SR.
+
+```bash
+kubectl apply -f examples/csi-app-local-storage.yaml
+```
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-xenorchestra-sc-local
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  storageType: local
+  # poolId: "<xo-pool-uuid>"   # optional; omit for topology-aware mode
+```
+
+See [Local Storage reference](references/local-storage.md) for full details on SR
+selection, VDI migration, idempotency, and VM live-migration behaviour.
+
 #### Static provisioning (pre-existing VDI)
 
 No `poolId` is required. The volume is identified by its VDI UUID in the PV manifest.
@@ -412,6 +443,7 @@ csi.xenorchestra.vates.tech
 | Parameter | Description | Required | Example |
 | --------- | ----------- | -------- | ------- |
 | `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. If omitted, the pool is selected automatically from `accessibility_requirements` (topology-aware mode). | No | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
+| `storageType` | Storage placement strategy. `shared` (default): VDI stays on the pool's shared default SR. `local`: VDI is migrated to the target host's local SR in `ControllerPublishVolume`. | No | `local` |
 
 ### Driver startup flags
 
