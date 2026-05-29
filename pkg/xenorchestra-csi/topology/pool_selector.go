@@ -50,7 +50,7 @@ func TaggedPoolIDs(ctx context.Context, poolClient library.Pool, tag string) ([]
 		return nil, fmt.Errorf("failed to list pools: %w", err)
 	}
 
-	var ids []uuid.UUID
+	ids := make([]uuid.UUID, 0, len(pools))
 	for _, pool := range pools {
 		ids = append(ids, pool.ID)
 	}

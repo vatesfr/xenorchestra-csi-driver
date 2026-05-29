@@ -361,22 +361,23 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		// then requisite topologies as fallback.
 		orderedPoolIDs, err := topology.OrderedPoolIDs(ar)
 		if err != nil {
-			if errors.Is(err, topology.ErrNoPoolInTopology) {
-				klog.V(2).InfoS("No pool topology found in accessibility_requirements, falling back to tag-based pool discovery", "kubernetesPoolTag", driver.kubernetesPoolTag)
-				// Fallback: discover pools by tag when no topology constraints are provided.
-				orderedPoolIDs, err = topology.TaggedPoolIDs(ctx, driver.xoClient.Pool(), driver.kubernetesPoolTag)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal,
-						"failed to list pools for tag-based fallback: %v", err)
-				}
-				if len(orderedPoolIDs) == 0 {
-					return nil, status.Errorf(codes.FailedPrecondition,
-						"no pool found with tag %q and no topology requirements provided",
-						driver.kubernetesPoolTag)
-				}
-			} else {
+			if !errors.Is(err, topology.ErrNoPoolInTopology) {
 				return nil, status.Errorf(codes.Internal,
 					"failed to derive pool from accessibility_requirements: %v", err)
+			}
+			// Fallback: discover pools by tag when no topology constraints are provided.
+			klog.V(2).InfoS("No pool topology found in accessibility_requirements, falling back to tag-based pool discovery",
+				"kubernetesPoolTag", driver.kubernetesPoolTag)
+
+			orderedPoolIDs, err = topology.TaggedPoolIDs(ctx, driver.xoClient.Pool(), driver.kubernetesPoolTag)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal,
+					"failed to list pools for tag-based fallback: %v", err)
+			}
+			if len(orderedPoolIDs) == 0 {
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"no pool found with tag %q and no topology requirements provided",
+					driver.kubernetesPoolTag)
 			}
 		}
 		pool, sr, err = topology.SelectPoolAndStorage(ctx, driver.xoClient.SR(), driver.xoClient.Pool(), orderedPoolIDs)
