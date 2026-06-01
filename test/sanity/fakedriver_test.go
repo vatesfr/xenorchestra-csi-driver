@@ -55,9 +55,9 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 				SR:        srID,
 				NameLabel: clients.BuildVDINameLabel(namePrefix, volumeId.String(), volumeName),
 				Size:      capacityBytes,
-				OtherConfig: map[string]string{
-					clients.VDIOtherConfigKeyPVName:   volumeName,
-					clients.VDIOtherConfigKeyVolumeId: volumeId.String(),
+				Tags: []string{
+					clients.BuildTag(clients.VDITagKeyPVName, volumeName),
+					clients.BuildTag(clients.VDITagKeyVolumeId, volumeId.String()),
 				},
 				PoolID: uuid.FromStringOrNil(stub.PoolId),
 			}
@@ -72,7 +72,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 
 		var matched *payloads.VDI
 		for _, vdi := range vdiStore.byID {
-			if vdi.OtherConfig[clients.VDIOtherConfigKeyPVName] != volumeName {
+			if clients.ParseTagValue(vdi.Tags, clients.VDITagKeyPVName) != volumeName {
 				continue
 			}
 			if matched != nil {
@@ -86,7 +86,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 			return nil, "", clients.ErrVolumeNotFound
 		}
 
-		return matched, matched.OtherConfig[clients.VDIOtherConfigKeyVolumeId], nil
+		return matched, clients.ParseTagValue(matched.Tags, clients.VDITagKeyVolumeId), nil
 	}).AnyTimes()
 	mockXoClient.EXPECT().GetVDIByVolumeId(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, volumeId string) (*payloads.VDI, error) {
 		vdiStore.RLock()
@@ -94,7 +94,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 
 		var matched *payloads.VDI
 		for _, vdi := range vdiStore.byID {
-			if vdi.OtherConfig[clients.VDIOtherConfigKeyVolumeId] != volumeId {
+			if clients.ParseTagValue(vdi.Tags, clients.VDITagKeyVolumeId) != volumeId {
 				continue
 			}
 			if matched != nil {

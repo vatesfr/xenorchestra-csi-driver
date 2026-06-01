@@ -419,7 +419,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}
 		// Recover the stable volume ID stored at creation time.
 		if existingId == "" {
-			return nil, status.Errorf(codes.Internal, "existing VDI %s is missing volume ID in other_config", existingVDI.ID)
+			return nil, status.Errorf(codes.Internal, "existing VDI %s is missing volume ID in tags", existingVDI.ID)
 		}
 		klog.V(5).InfoS("Volume already exists, returning existing VDI", "vdiID", existingVDI.ID, "volumeId", existingId)
 		return &csi.CreateVolumeResponse{
@@ -432,7 +432,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}, nil
 	}
 
-	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, DriverName, driver.clusterTag)
+	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, driver.Name+"@"+driver.Version, driver.clusterTag)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "volumeName", volumeName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
