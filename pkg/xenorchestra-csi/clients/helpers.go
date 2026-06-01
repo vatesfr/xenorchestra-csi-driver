@@ -19,7 +19,18 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 )
+
+const vdiNameDescriptionPVNameMarker = "pv-name="
+
+const (
+	dns1123LabelFmt     = `[a-z0-9](?:[-a-z0-9]*[a-z0-9])?`
+	dns1123SubdomainFmt = dns1123LabelFmt + `(?:\.` + dns1123LabelFmt + `)*`
+)
+
+var vdiNameDescriptionPVNameRe = regexp.MustCompile(`(?:^|;)\s*pv-name=(` + dns1123SubdomainFmt + `)(?:[\s;]|$)`)
 
 // BuildVDINameLabel constructs the VDI.name_label for a new volume.
 // The format is "<prefix><volumeId>-<volumeName>" (e.g. "csi-12345678-90ab-cdef-pvc-xyz").
@@ -34,7 +45,7 @@ func BuildVDINameLabel(prefix, volumeId, volumeName string) string {
 // can identify the backing Kubernetes PV in the Xen Orchestra UI.
 // This field is not used for lookups.
 func BuildVDINameDescription(volumeName string) string {
-	return "VDI managed by the Kubernetes CSI; pv-name=" + volumeName
+	return "VDI managed by the Kubernetes CSI; " + vdiNameDescriptionPVNameMarker + volumeName
 }
 
 // BuildTag encodes a key-value pair as a VDI tag string using the format
@@ -61,4 +72,41 @@ func ParseTagValue(tags []string, key string) string {
 // The value is regex-escaped for safety.
 func BuildTagFilter(key, value string) string {
 	return fmt.Sprintf("tags:/^%s$/", regexp.QuoteMeta(BuildTag(key, value)))
+}
+
+// recoverVolumeNameFromVDI tries to recover the Kubernetes PV name for a VDI.
+// It first reads the VDI name_description and falls back to parsing name_label.
+func recoverVolumeNameFromVDI(vdi *payloads.VDI, volumeId string) string {
+	if vdi == nil {
+		return ""
+	}
+
+	if volumeName := parseVolumeNameFromVDINameDescription(vdi.NameDescription); volumeName != "" {
+		return volumeName
+	}
+
+	return parseVolumeNameFromVDINameLabel(vdi.NameLabel, volumeId)
+}
+
+func parseVolumeNameFromVDINameDescription(nameDescription string) string {
+	matches := vdiNameDescriptionPVNameRe.FindStringSubmatch(nameDescription)
+	if len(matches) != 2 {
+		return ""
+	}
+
+	return matches[1]
+}
+
+func parseVolumeNameFromVDINameLabel(nameLabel, volumeId string) string {
+	if volumeId == "" {
+		return ""
+	}
+
+	nameLabelRe := regexp.MustCompile(fmt.Sprintf(`%s-(%s)$`, regexp.QuoteMeta(volumeId), dns1123SubdomainFmt))
+	matches := nameLabelRe.FindStringSubmatch(nameLabel)
+	if len(matches) != 2 {
+		return ""
+	}
+
+	return matches[1]
 }

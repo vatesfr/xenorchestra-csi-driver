@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,8 +37,8 @@ func TestBuildTag(t *testing.T) {
 		{
 			name:  "volume ID tag",
 			key:   VDITagKeyVolumeId,
-			value: "aaaaaaaa-0000-0000-0000-000000000001",
-			want:  "k8s:volumeId:aaaaaaaa-0000-0000-0000-000000000001",
+			value: "aaaaaaab-0000-0000-0000-000000000001",
+			want:  "k8s:volumeId:aaaaaaab-0000-0000-0000-000000000001",
 		},
 		{
 			name:  "PV name tag",
@@ -52,9 +54,9 @@ func TestBuildTag(t *testing.T) {
 		},
 		{
 			name:  "value with colons is preserved verbatim",
-			key:   "someKey",
+			key:   "someKey1",
 			value: "a:b:c",
-			want:  "k8s:someKey:a:b:c",
+			want:  "k8s:someKey1:a:b:c",
 		},
 		{
 			name:  "empty value",
@@ -178,8 +180,8 @@ func TestBuildTagFilter(t *testing.T) {
 		{
 			name:  "managed-by value with dot and at is escaped",
 			key:   VDITagKeyManagedBy,
-			value: "csi.xenorchestra.vates.tech@0.4.0",
-			want:  `tags:/^k8s:managedBy:csi\.xenorchestra\.vates\.tech@0\.4\.0$/`,
+			value: "csi.xenorchestra.vates.tech@0.4.1",
+			want:  `tags:/^k8s:managedBy:csi\.xenorchestra\.vates\.tech@0\.4\.1$/`,
 		},
 		{
 			name:  "value with regex special chars is fully escaped",
@@ -214,7 +216,7 @@ func TestBuildTagParseTagValueRoundTrip(t *testing.T) {
 	}{
 		{VDITagKeyVolumeId, "aaaaaaaa-0000-0000-0000-000000000001"},
 		{VDITagKeyPVName, "pvc-some-persistent-volume"},
-		{VDITagKeyManagedBy, "csi.xenorchestra.vates.tech@0.4.0"},
+		{VDITagKeyManagedBy, "csi.xenorchestra.vates.tech@0.4.2"},
 		{"someKey", "value:with:colons"},
 	}
 
@@ -225,4 +227,99 @@ func TestBuildTagParseTagValueRoundTrip(t *testing.T) {
 			assert.Equal(t, p.value, got, "round-trip failed for key=%q value=%q tag=%q", p.key, p.value, tag)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// RecoverVolumeNameFromVDI
+// ---------------------------------------------------------------------------
+
+func TestParseVolumeNameFromVDINameDescription(t *testing.T) {
+	tests := []struct {
+		name            string
+		nameDescription string
+		want            string
+	}{
+		{
+			name:            "ExactFormat",
+			nameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-from-description1",
+			want:            "pvc-from-description1",
+		},
+		{
+			name:            "StopsAtSpaceDelimiter",
+			nameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-from-description2 manual-edit",
+			want:            "pvc-from-description2",
+		},
+		{
+			name:            "StopsAtSemicolonDelimiter",
+			nameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-from-description3; manual-edit",
+			want:            "pvc-from-description3",
+		},
+		{
+			name:            "MissingPVName",
+			nameDescription: "VDI managed by the Kubernetes CSI",
+			want:            "",
+		},
+		{
+			name:            "EmptyPVName",
+			nameDescription: "VDI managed by the Kubernetes CSI; pv-name=",
+			want:            "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseVolumeNameFromVDINameDescription(tt.nameDescription)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRecoverVolumeNameFromVDI(t *testing.T) {
+	t.Run("FromNameDescription", func(t *testing.T) {
+		vdi := &payloads.VDI{
+			NameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-from-description",
+			NameLabel:       "csi-aaaaaaaa-0000-0000-0000-000000000001-pvc-from-label",
+		}
+
+		got := recoverVolumeNameFromVDI(vdi, "aaaaaaaa-0000-0000-0000-000000000001")
+		assert.Equal(t, "pvc-from-description", got)
+	})
+
+	t.Run("FromNameDescriptionWithManualEditSuffix", func(t *testing.T) {
+		vdi := &payloads.VDI{
+			NameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-from-description manual-edit",
+			NameLabel:       "csi-aaaaaaaa-0000-0000-0000-000000000001-pvc-from-label",
+		}
+
+		got := recoverVolumeNameFromVDI(vdi, "aaaaaaaa-0000-0000-0000-000000000001")
+		assert.Equal(t, "pvc-from-description", got)
+	})
+
+	t.Run("FromNameLabelFallback", func(t *testing.T) {
+		vdi := &payloads.VDI{
+			NameLabel: "csi-aaaaaaaa-0000-0000-0000-000000000002-pvc-from-label",
+		}
+
+		got := recoverVolumeNameFromVDI(vdi, "aaaaaaaa-0000-0000-0000-000000000002")
+		assert.Equal(t, "pvc-from-label", got)
+	})
+
+	t.Run("RejectsNameLabelWithSpace", func(t *testing.T) {
+		vdi := &payloads.VDI{
+			NameLabel: "csi-aaaaaaaa-0000-0000-0000-000000000002-pvc from label",
+		}
+
+		got := recoverVolumeNameFromVDI(vdi, "aaaaaaaa-0000-0000-0000-000000000002")
+		assert.Empty(t, got)
+	})
+
+	t.Run("EmptyWhenNotRecoverable", func(t *testing.T) {
+		vdi := &payloads.VDI{
+			NameDescription: "custom description",
+			NameLabel:       "custom-label",
+		}
+
+		got := recoverVolumeNameFromVDI(vdi, "aaaaaaaa-0000-0000-0000-000000000003")
+		assert.Empty(t, got)
+	})
 }

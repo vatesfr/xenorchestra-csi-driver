@@ -18,6 +18,7 @@ package clients
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -68,7 +69,7 @@ type XoClient interface {
 
 	// MigrateVDIAndWait migrates vdiID to targetSRID and blocks until the task
 	// completes. Returns the new VDI UUID assigned by XAPI after migration.
-	MigrateVDIAndWait(ctx context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error)
+	MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
 }
 
 type xoClient struct {
@@ -288,6 +289,15 @@ func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*paylo
 		case 0:
 			return nil, ErrVolumeNotFound
 		case 1:
+			// Recover VDI tags for the found VDI to ensure it can be found by volume ID in the future.
+			klog.V(2).InfoS("Found VDI by name_label fallback, recovering tags", "volumeId", volumeId, "vdiID", vdis[0].ID)
+			tagsToRecover := []string{BuildTag(VDITagKeyVolumeId, volumeId)}
+			if recoveredVolumeName := recoverVolumeNameFromVDI(vdis[0], volumeId); recoveredVolumeName != "" {
+				tagsToRecover = append(tagsToRecover, BuildTag(VDITagKeyPVName, recoveredVolumeName))
+			} else {
+				klog.V(3).InfoS("Could not recover pvName from VDI metadata during fallback", "volumeId", volumeId, "vdiID", vdis[0].ID)
+			}
+			_ = c.writeTagsToVDI(ctx, vdis[0].ID, tagsToRecover)
 			return vdis[0], nil
 		default:
 			return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via name_label fallback", ErrVolumeIdAmbiguous, volumeId, len(vdis))
@@ -339,10 +349,14 @@ func (c xoClient) FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]
 	return srs, nil
 }
 
-func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error) {
-	taskID, err := c.VDI().Migrate(ctx, vdiID, targetSRID)
+func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
+	// Workaround for the tags that are not copied during migration.
+	oldTags := vdiID.Tags
+
+	klog.V(2).InfoS("Starting VDI migration", "vdiID", vdiID.ID, "fromSR", vdiID.SR, "toSR", targetSRID, "oldTags", oldTags)
+	taskID, err := c.VDI().Migrate(ctx, vdiID.ID, targetSRID)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to start VDI migration (vdiID=%s targetSR=%s): %w", vdiID, targetSRID, err)
+		return uuid.Nil, fmt.Errorf("failed to start VDI migration (vdiID=%s targetSR=%s): %w", vdiID.ID, targetSRID, err)
 	}
 	task, err := c.Task().Wait(ctx, taskID)
 	if err != nil {
@@ -354,5 +368,22 @@ func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID uuid.UUID, target
 	if task.Result.ID == uuid.Nil {
 		return uuid.Nil, fmt.Errorf("VDI migration task %s succeeded but returned no new VDI UUID", taskID)
 	}
-	return task.Result.ID, nil
+	newVDIID := task.Result.ID
+	klog.V(2).InfoS("VDI migration completed", "oldVDIID", vdiID.ID, "newVDIID", newVDIID)
+
+	// We need to manually copy the "k8s:volumeId:<uuid>" tag from the old VDI to the new one to ensure the new VDI can be found by volume ID after migration.
+	_ = c.writeTagsToVDI(ctx, newVDIID, oldTags)
+	return newVDIID, nil
+}
+
+func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []string) error {
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, tagPrefix+":") {
+			if err := c.VDI().AddTag(ctx, vdiID, tag); err != nil {
+				klog.ErrorS(err, "Failed to copy tag to VDI", "vdiID", vdiID, "tag", tag)
+				// Not returning an error here since the migration itself succeeded and the volume can still be found by name, but logging it for troubleshooting.
+			}
+		}
+	}
+	return nil
 }

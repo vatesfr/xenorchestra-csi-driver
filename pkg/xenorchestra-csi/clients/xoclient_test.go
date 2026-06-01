@@ -52,6 +52,9 @@ var (
 	localSRID2 = uuid.Must(uuid.FromString("bbbbbbbb-0000-0000-0000-000000000003"))
 	poolUUID   = uuid.Must(uuid.FromString("eeeeeeee-0000-0000-0000-000000000005"))
 	vdiUUID    = uuid.Must(uuid.FromString("cccccccc-0000-0000-0000-000000000003"))
+	vdiTest    = payloads.VDI{
+		ID: vdiUUID,
+	}
 	newVDIUUID = uuid.Must(uuid.FromString("dddddddd-0000-0000-0000-000000000004"))
 	taskID     = "task-abc-123"
 )
@@ -151,7 +154,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{ID: newVDIUUID},
 			}, nil)
 
-		got, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.NoError(t, err)
 		assert.Equal(t, newVDIUUID, got)
 	})
@@ -164,7 +167,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 			Migrate(gomock.Any(), vdiUUID, localSRID).
 			Return("", migrateErr)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, migrateErr)
 	})
@@ -180,7 +183,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 			Wait(gomock.Any(), taskID).
 			Return(nil, waitErr)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, waitErr)
 	})
@@ -198,7 +201,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{Message: "random failure message from XAPI"},
 			}, nil)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), string(payloads.Failure))
 		assert.Contains(t, err.Error(), "random failure message from XAPI")
@@ -217,7 +220,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{ID: uuid.Nil},
 			}, nil)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 	})
 }
@@ -261,6 +264,12 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, fallbackFilter).
 			Return([]*payloads.VDI{vdi}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdiUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdiUUID, BuildTag(VDITagKeyPVName, "pvc-xyz")).
+			Return(nil)
 
 		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
 		require.NoError(t, err)

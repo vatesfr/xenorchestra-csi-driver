@@ -148,7 +148,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		if vdi.SR != localSR.ID {
 			klog.V(2).InfoS("Migrating VDI to local SR",
 				"vdiID", vdi.ID, "fromSR", vdi.SR, "toSR", localSR.ID)
-			newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, vdi.ID, localSR.ID)
+			newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, *vdi, localSR.ID)
 			if err != nil {
 				klog.ErrorS(err, "Failed to migrate VDI to local SR", "vdiID", vdi.ID, "localSRID", localSR.ID)
 				return nil, status.Errorf(codes.Internal,
