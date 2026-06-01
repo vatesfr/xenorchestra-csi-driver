@@ -117,6 +117,40 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 		Device: &device,
 	}, nil).AnyTimes()
 	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockXoClient.EXPECT().FindLocalSRForHost(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
+		localSR := payloads.StorageRepository{
+			ID:          uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel:   "fake-local-sr",
+			Type:        "ext",
+			Container:   hostID,
+			Pool:        uuid.FromStringOrNil(stub.PoolId),
+			ContentType: "user",
+		}
+		return &localSR, nil
+	}).AnyTimes()
+	mockXoClient.EXPECT().FindLocalSRsForPool(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error) {
+		localSR := payloads.StorageRepository{
+			ID:          uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel:   "fake-local-sr",
+			Type:        "ext",
+			Pool:        poolID,
+			ContentType: "user",
+		}
+		return []*payloads.StorageRepository{&localSR}, nil
+	}).AnyTimes()
+	mockXoClient.EXPECT().MigrateVDIAndWait(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error) {
+		newVDI := uuid.Must(uuid.NewV4())
+		vdiStore.Lock()
+		defer vdiStore.Unlock()
+		if vdi, exists := vdiStore.byID[vdiID]; exists {
+			vdi.ID = newVDI
+			vdi.SR = targetSRID
+			delete(vdiStore.byID, vdiID)
+			vdiStore.byID[newVDI] = vdi
+		}
+		return newVDI, nil
+	}).AnyTimes()
+
 	mockXoClient.EXPECT().IsSRAttachedToHost(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	return xenorchestracsi.NewDriverWithDependencies(
@@ -151,10 +185,19 @@ func newMockPool(ctrl *gomock.Controller) *xoLibMock.MockPool {
 				ID:        id,
 				NameLabel: "fake-pool",
 				DefaultSR: uuid.FromStringOrNil(stub.DefaultSRId),
+				Tags:      []string{xenorchestracsi.DefaultKubernetesPoolTag},
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such Pool %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"Pool\"\n  }\n}", id, id)
 	}).AnyTimes()
+	mockPool.EXPECT().GetAll(gomock.Any(), gomock.Any(), fmt.Sprintf("tags:/^%s$/", xenorchestracsi.DefaultKubernetesPoolTag)).Return([]*payloads.Pool{
+		{
+			ID:        uuid.FromStringOrNil(stub.PoolId),
+			NameLabel: "fake-pool",
+			DefaultSR: uuid.FromStringOrNil(stub.DefaultSRId),
+			Tags:      []string{xenorchestracsi.DefaultKubernetesPoolTag},
+		},
+	}, nil).AnyTimes()
 	return mockPool
 }
 
@@ -175,6 +218,7 @@ func newMockVDI(ctrl *gomock.Controller) *xoLibMock.MockVDI {
 		delete(vdiStore.byID, id)
 		return nil
 	}).AnyTimes()
+	mockVDI.EXPECT().AddTag(gomock.Any(), gomock.Any(), xenorchestracsi.DefaultClusterTag).Return(nil).AnyTimes()
 
 	return mockVDI
 }

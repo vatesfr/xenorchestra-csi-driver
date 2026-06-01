@@ -37,12 +37,13 @@ type Driver interface {
 }
 
 type xenorchestraCSIDriver struct {
-	Name          string
-	NodeID        string
-	Version       string
-	endpoint      string
-	vdiNamePrefix string
-	clusterTag    string
+	Name              string
+	NodeID            string
+	Version           string
+	endpoint          string
+	vdiNamePrefix     string
+	clusterTag        string
+	kubernetesPoolTag string
 	csi.UnimplementedControllerServer
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
@@ -66,15 +67,17 @@ func NewDriverWithDependencies(options *DriverOptions, nodeMetadata clients.Node
 	klog.Infof("Version: %s", driverVersion)
 	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
 	klog.Infof("Cluster tag: %q", options.ClusterTag)
+	klog.Infof("Kubernetes pool tag: %q", options.KubernetesPoolTag)
 	return &xenorchestraCSIDriver{
-		Name:          options.DriverName,
-		Version:       driverVersion,
-		endpoint:      options.Endpoint,
-		vdiNamePrefix: options.VDINamePrefix,
-		clusterTag:    options.ClusterTag,
-		nodeMetadata:  nodeMetadata,
-		xoClient:      xoClient,
-		mounter:       mounter,
+		Name:              options.DriverName,
+		Version:           driverVersion,
+		endpoint:          options.Endpoint,
+		vdiNamePrefix:     options.VDINamePrefix,
+		clusterTag:        options.ClusterTag,
+		kubernetesPoolTag: options.KubernetesPoolTag,
+		nodeMetadata:      nodeMetadata,
+		xoClient:          xoClient,
+		mounter:           mounter,
 	}
 }
 
