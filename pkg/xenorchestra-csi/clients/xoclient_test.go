@@ -276,10 +276,106 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		assert.Equal(t, vdi, got)
 	})
 
-	t.Run("NotFoundInBothLookups", func(t *testing.T) {
+	t.Run("NotFoundInAllLookups", func(t *testing.T) {
 		c, mockVDI := newClientWithMockVDI(t)
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000012"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeNotFound)
+	})
+
+	t.Run("FoundViaDirectUUID", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000017"
+		vdi := &payloads.VDI{
+			ID:            uuid.FromStringOrNil(volumeId),
+			NameLabel:     "csi-pvc-static",
+			NameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-static",
+		}
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(vdi, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdi.ID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdi.ID, BuildTag(VDITagKeyPVName, "pvc-static")).
+			Return(nil)
+
+		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, got)
+	})
+
+	t.Run("DirectUUIDNotFound", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000018"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeNotFound)
+	})
+
+	t.Run("DirectUUIDAPIError", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000019"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		apiErr := errors.New("connection refused")
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, apiErr)
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
+
+	t.Run("NonUUIDVolumeIdSkipsDirectLookup", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "not-a-uuid"
 		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
 		mockVDI.EXPECT().

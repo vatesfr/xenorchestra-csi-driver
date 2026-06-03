@@ -15,7 +15,10 @@ limitations under the License.
 */
 package clients
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // ErrVBDNotFound is returned when no VBD matches the given VDI and VM combination.
 var ErrVBDNotFound = errors.New("VBD not found")
@@ -28,3 +31,8 @@ var ErrVolumeIdAmbiguous = errors.New("multiple VDIs match volume ID")
 
 // ErrVolumeNameAmbiguous is returned when multiple VDIs match the same Kubernetes PV name.
 var ErrVolumeNameAmbiguous = errors.New("multiple VDIs match volume name")
+
+// IsNotFoundError reports whether err is an HTTP 404 from the Xen Orchestra REST
+func IsNotFoundError(err error) bool {
+	return strings.Contains(err.Error(), "API error: 404 Not Found")
+}

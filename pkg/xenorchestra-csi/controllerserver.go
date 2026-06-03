@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/gofrs/uuid"
@@ -492,7 +491,7 @@ func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.
 	}
 
 	if err := driver.xoClient.VDI().Delete(ctx, vdi.ID); err != nil {
-		if isNotFoundError(err) {
+		if clients.IsNotFoundError(err) {
 			// Deleted by a concurrent call between our lookup and Delete
 			klog.V(4).InfoS("VDI not found during delete call, already deleted by concurrent call", "volumeID", volumeID, "vdiID", vdi.ID)
 			return &csi.DeleteVolumeResponse{}, nil
@@ -588,11 +587,4 @@ func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 		"device": *vbd.Device,
 		"vbd":    vbd.ID.String(),
 	}
-}
-
-// isNotFoundError reports whether err is an HTTP 404 from the Xen Orchestra REST
-// API. The SDK does not expose a dedicated sentinel; errors follow the pattern
-// "API error: 404 Not Found - <body>".
-func isNotFoundError(err error) bool {
-	return strings.Contains(err.Error(), "API error: 404 Not Found")
 }

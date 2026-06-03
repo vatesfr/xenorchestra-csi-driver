@@ -54,8 +54,10 @@ type XoClient interface {
 	IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) error
 
 	// GetVDIByVolumeId looks up a VDI by its CSI volume ID (UUID).
-	// The ID is stored in the VDI tag "k8s:volumeId:<uuid>" at creation time
-	// and remains stable across SR migrations.
+	// Lookup order:
+	//  1. VDI tag "k8s:volumeId:<volumeId>" (primary, v0.4.0+ and migrated volumes)
+	//  2. name_label containing the volumeId (migrated v0.3.0 volumes, tag recovery)
+	//  3. Direct VDI UUID lookup (static volumes using raw VDI UUID as volumeHandle)
 	// Returns ErrVolumeNotFound if no VDI matches, ErrVolumeIdAmbiguous if multiple match.
 	GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error)
 
@@ -269,44 +271,57 @@ func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmU
 }
 
 func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error) {
+	// 1. Primary: look up by VDI tag "k8s:volumeId:<volumeId>".
 	filter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 	vdis, err := c.VDI().GetAll(ctx, 2, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list VDIs by volume ID %s: %w", volumeId, err)
 	}
-	switch len(vdis) {
-	case 0:
-		// Fallback: search by name_label containing the volumeId.
-		// This handles the case where tags were erased (e.g. after a XO restore).
-		// NOTE: This should be removed in a future major release once we can be sure tags are always preserved.
-		klog.V(2).InfoS("No VDI found with tag volume ID, falling back to name_label search", "volumeId", volumeId)
-		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
-		vdis, err = c.VDI().GetAll(ctx, 2, fallbackFilter)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list VDIs by name_label for volume ID %s: %w", volumeId, err)
-		}
-		switch len(vdis) {
-		case 0:
-			return nil, ErrVolumeNotFound
-		case 1:
-			// Recover VDI tags for the found VDI to ensure it can be found by volume ID in the future.
-			klog.V(2).InfoS("Found VDI by name_label fallback, recovering tags", "volumeId", volumeId, "vdiID", vdis[0].ID)
-			tagsToRecover := []string{BuildTag(VDITagKeyVolumeId, volumeId)}
-			if recoveredVolumeName := recoverVolumeNameFromVDI(vdis[0], volumeId); recoveredVolumeName != "" {
-				tagsToRecover = append(tagsToRecover, BuildTag(VDITagKeyPVName, recoveredVolumeName))
-			} else {
-				klog.V(3).InfoS("Could not recover pvName from VDI metadata during fallback", "volumeId", volumeId, "vdiID", vdis[0].ID)
-			}
-			_ = c.writeTagsToVDI(ctx, vdis[0].ID, tagsToRecover)
-			return vdis[0], nil
-		default:
-			return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via name_label fallback", ErrVolumeIdAmbiguous, volumeId, len(vdis))
-		}
-	case 1:
+	if len(vdis) == 1 {
 		return vdis[0], nil
-	default:
-		return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs", ErrVolumeIdAmbiguous, volumeId, len(vdis))
 	}
+	if len(vdis) > 1 {
+		return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via tag", ErrVolumeIdAmbiguous, volumeId, len(vdis))
+	}
+
+	// 2. Fallback: search by name_label containing the volumeId.
+	// This handles the case where tags were erased (e.g. after a migration).
+	klog.V(2).InfoS("No VDI found with tag volume ID, falling back to name_label search", "volumeId", volumeId)
+	fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+	vdis, err = c.VDI().GetAll(ctx, 2, fallbackFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list VDIs by name_label for volume ID %s: %w", volumeId, err)
+	}
+	if len(vdis) == 1 {
+		// Recover VDI tags for the found VDI to ensure it can be found by volume ID in the future.
+		klog.V(2).InfoS("Found VDI by name_label fallback, recovering tags", "volumeId", volumeId, "vdiID", vdis[0].ID)
+		c.recoverVolumeLookupTags(ctx, vdis[0], volumeId)
+		return vdis[0], nil
+	}
+	if len(vdis) > 1 {
+		return nil, fmt.Errorf("%w: volumeId=%s matched %d VDIs via name_label fallback", ErrVolumeIdAmbiguous, volumeId, len(vdis))
+	}
+
+	// 3. Final fallback: direct VDI UUID lookup for static volumes.
+	// Static provisioning uses the raw VDI UUID as volumeHandle. This lookup
+	// is intentionally last because dynamic volume handles can also be UUID-shaped,
+	// and we must avoid returning the wrong VDI.
+	if parsedUUID, err := uuid.FromString(volumeId); err == nil && parsedUUID != uuid.Nil {
+		klog.V(2).InfoS("No VDI found by name_label, falling back to direct VDI UUID lookup", "volumeId", volumeId)
+		vdi, err := c.VDI().Get(ctx, parsedUUID)
+		if err != nil {
+			if IsNotFoundError(err) {
+				return nil, ErrVolumeNotFound
+			}
+			return nil, fmt.Errorf("failed to get VDI by direct UUID %s: %w", volumeId, err)
+		}
+		// Recover the tag so future lookups hit the primary path.
+		klog.V(2).InfoS("Found VDI by direct UUID lookup, recovering tags", "volumeId", volumeId, "vdiID", vdi.ID)
+		c.recoverVolumeLookupTags(ctx, vdi, volumeId)
+		return vdi, nil
+	}
+
+	return nil, ErrVolumeNotFound
 }
 
 func (c xoClient) FindVDIByVolumeName(ctx context.Context, volumeName string) (*payloads.VDI, string, error) {
@@ -374,6 +389,16 @@ func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, tar
 	// We need to manually copy the "k8s:volumeId:<uuid>" tag from the old VDI to the new one to ensure the new VDI can be found by volume ID after migration.
 	_ = c.writeTagsToVDI(ctx, newVDIID, oldTags)
 	return newVDIID, nil
+}
+
+func (c xoClient) recoverVolumeLookupTags(ctx context.Context, vdi *payloads.VDI, volumeId string) {
+	tagsToRecover := []string{BuildTag(VDITagKeyVolumeId, volumeId)}
+	if recoveredVolumeName := recoverVolumeNameFromVDI(vdi, volumeId); recoveredVolumeName != "" {
+		tagsToRecover = append(tagsToRecover, BuildTag(VDITagKeyPVName, recoveredVolumeName))
+	} else {
+		klog.V(3).InfoS("Could not recover pvName from VDI metadata during fallback", "volumeId", volumeId, "vdiID", vdi.ID)
+	}
+	_ = c.writeTagsToVDI(ctx, vdi.ID, tagsToRecover)
 }
 
 func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []string) error {
