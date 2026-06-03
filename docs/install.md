@@ -277,7 +277,9 @@ selection, VDI migration, idempotency, and VM live-migration behaviour.
 
 #### Static provisioning (pre-existing VDI)
 
-No `poolId` is required. The volume is identified by its VDI UUID in the PV manifest.
+No `poolId` is required. The volume is identified by its raw VDI UUID in the PV manifest.
+This remains supported in v0.4.0: static volumes use `volumeHandle = <VDI UUID>` and
+are resolved through a direct VDI UUID fallback when tag-based lookup does not apply.
 
 ```bash
 kubectl apply -f examples/csi-storageclass.yaml
@@ -348,7 +350,7 @@ kubectl apply -f examples/csi-app.yaml
 ## Static volume provisioning
 
 Use a VDI that already exists in XenOrchestra.
-No `poolId` is required; the volume is bound by its VDI UUID.
+No `poolId` is required; the volume is bound by its raw VDI UUID.
 
 ### 1. Create a VDI in Xen Orchestra
 
@@ -435,7 +437,7 @@ csi.xenorchestra.vates.tech
 
 | Field | Description | Required | Example |
 | ----- | ----------- | -------- | ------- |
-| `volumeHandle` | UUID of the existing VDI | Yes | `b05f63f2-692a-4833-9453-980a73f9f27f` |
+| `volumeHandle` | Raw UUID of the existing VDI | Yes | `b05f63f2-692a-4833-9453-980a73f9f27f` |
 | `driver` | Must be `csi.xenorchestra.vates.tech` | Yes | — |
 
 ### Dynamic provisioning – StorageClass parameters

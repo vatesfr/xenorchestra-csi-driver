@@ -302,8 +302,8 @@ func TestGetVDIByVolumeId(t *testing.T) {
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000017"
 		vdi := &payloads.VDI{
-			ID:            uuid.FromStringOrNil(volumeId),
-			NameLabel:     "csi-pvc-static",
+			ID:              uuid.FromStringOrNil(volumeId),
+			NameLabel:       "csi-pvc-static",
 			NameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-static",
 		}
 		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
