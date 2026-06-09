@@ -69,9 +69,9 @@ type XoClient interface {
 	// the given pool. Returns an error if the API call fails or none are found.
 	FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error)
 
-	// MigrateVDIAndWait migrates vdiID to targetSRID and blocks until the task
+	// MigrateVDIAndWait migrates vdi to targetSRID and blocks until the task
 	// completes. Returns the new VDI UUID assigned by XAPI after migration.
-	MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
+	MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
 }
 
 type xoClient struct {
@@ -364,14 +364,14 @@ func (c xoClient) FindLocalSRsForPool(ctx context.Context, poolID uuid.UUID) ([]
 	return srs, nil
 }
 
-func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
+func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
 	// Workaround for the tags that are not copied during migration.
-	oldTags := vdiID.Tags
+	oldTags := vdi.Tags
 
-	klog.V(2).InfoS("Starting VDI migration", "vdiID", vdiID.ID, "fromSR", vdiID.SR, "toSR", targetSRID, "oldTags", oldTags)
-	taskID, err := c.VDI().Migrate(ctx, vdiID.ID, targetSRID)
+	klog.V(2).InfoS("Starting VDI migration", "vdiID", vdi.ID, "fromSR", vdi.SR, "toSR", targetSRID, "oldTags", oldTags)
+	taskID, err := c.VDI().Migrate(ctx, vdi.ID, targetSRID)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to start VDI migration (vdiID=%s targetSR=%s): %w", vdiID.ID, targetSRID, err)
+		return uuid.Nil, fmt.Errorf("failed to start VDI migration (vdiID=%s targetSR=%s): %w", vdi.ID, targetSRID, err)
 	}
 	task, err := c.Task().Wait(ctx, taskID)
 	if err != nil {
@@ -384,10 +384,10 @@ func (c xoClient) MigrateVDIAndWait(ctx context.Context, vdiID payloads.VDI, tar
 		return uuid.Nil, fmt.Errorf("VDI migration task %s succeeded but returned no new VDI UUID", taskID)
 	}
 	newVDIID := task.Result.ID
-	klog.V(2).InfoS("VDI migration completed", "oldVDIID", vdiID.ID, "newVDIID", newVDIID)
+	klog.V(2).InfoS("VDI migration completed", "oldVDIID", vdi.ID, "newVDIID", newVDIID)
 
 	// We need to manually copy the "k8s:volumeId:<uuid>" tag from the old VDI to the new one to ensure the new VDI can be found by volume ID after migration.
-	_ = c.writeTagsToVDI(ctx, newVDIID, oldTags)
+	c.writeTagsToVDI(ctx, newVDIID, oldTags)
 	return newVDIID, nil
 }
 
@@ -398,10 +398,10 @@ func (c xoClient) recoverVolumeLookupTags(ctx context.Context, vdi *payloads.VDI
 	} else {
 		klog.V(3).InfoS("Could not recover pvName from VDI metadata during fallback", "volumeId", volumeId, "vdiID", vdi.ID)
 	}
-	_ = c.writeTagsToVDI(ctx, vdi.ID, tagsToRecover)
+	c.writeTagsToVDI(ctx, vdi.ID, tagsToRecover)
 }
 
-func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []string) error {
+func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []string) {
 	for _, tag := range tags {
 		if strings.HasPrefix(tag, tagPrefix+":") {
 			if err := c.VDI().AddTag(ctx, vdiID, tag); err != nil {
@@ -410,5 +410,5 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 			}
 		}
 	}
-	return nil
+	return
 }
