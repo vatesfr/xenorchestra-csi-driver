@@ -410,5 +410,4 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 			}
 		}
 	}
-	return
 }

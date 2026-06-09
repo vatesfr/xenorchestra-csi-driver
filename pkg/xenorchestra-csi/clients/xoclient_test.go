@@ -223,6 +223,70 @@ func TestMigrateVDIAndWait(t *testing.T) {
 		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 	})
+
+	t.Run("CopiesTagsToNewVDI", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000030"
+		volumeName := "pvc-tag-copy"
+		vdiWithTags := payloads.VDI{
+			ID: vdiUUID,
+			Tags: []string{
+				BuildTag(VDITagKeyVolumeId, volumeId),
+				BuildTag(VDITagKeyPVName, volumeName),
+				"some-other-tag",
+			},
+		}
+
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: newVDIUUID},
+			}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyPVName, volumeName)).
+			Return(nil)
+
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiWithTags, localSRID)
+		require.NoError(t, err)
+		assert.Equal(t, newVDIUUID, got)
+	})
+
+	t.Run("AddTagErrorDoesNotFailMigration", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000031"
+		vdiWithTags := payloads.VDI{
+			ID: vdiUUID,
+			Tags: []string{
+				BuildTag(VDITagKeyVolumeId, volumeId),
+			},
+		}
+
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: newVDIUUID},
+			}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(errors.New("tag write failed"))
+
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiWithTags, localSRID)
+		require.NoError(t, err)
+		assert.Equal(t, newVDIUUID, got)
+	})
 }
 
 // ---------------------------------------------------------------------------
