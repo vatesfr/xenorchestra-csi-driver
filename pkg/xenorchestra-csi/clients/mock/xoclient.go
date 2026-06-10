@@ -75,9 +75,9 @@ func (mr *MockXoClientMockRecorder) ConnectVBDToVM(ctx, vbd any) *gomock.Call {
 }
 
 // CreateNewVolume mocks base method.
-func (m *MockXoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName, createdBy, clusterTag string) (uuid.UUID, uuid.UUID, error) {
+func (m *MockXoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName, managedBy, clusterTag string) (uuid.UUID, uuid.UUID, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateNewVolume", ctx, srID, namePrefix, capacityBytes, volumeName, createdBy, clusterTag)
+	ret := m.ctrl.Call(m, "CreateNewVolume", ctx, srID, namePrefix, capacityBytes, volumeName, managedBy, clusterTag)
 	ret0, _ := ret[0].(uuid.UUID)
 	ret1, _ := ret[1].(uuid.UUID)
 	ret2, _ := ret[2].(error)
@@ -85,9 +85,9 @@ func (m *MockXoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, name
 }
 
 // CreateNewVolume indicates an expected call of CreateNewVolume.
-func (mr *MockXoClientMockRecorder) CreateNewVolume(ctx, srID, namePrefix, capacityBytes, volumeName, createdBy, clusterTag any) *gomock.Call {
+func (mr *MockXoClientMockRecorder) CreateNewVolume(ctx, srID, namePrefix, capacityBytes, volumeName, managedBy, clusterTag any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNewVolume", reflect.TypeOf((*MockXoClient)(nil).CreateNewVolume), ctx, srID, namePrefix, capacityBytes, volumeName, createdBy, clusterTag)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNewVolume", reflect.TypeOf((*MockXoClient)(nil).CreateNewVolume), ctx, srID, namePrefix, capacityBytes, volumeName, managedBy, clusterTag)
 }
 
 // DisconnectVBDFromVM mocks base method.
@@ -238,18 +238,18 @@ func (mr *MockXoClientMockRecorder) IsVDIUsedAnywhere(ctx, vdi any) *gomock.Call
 }
 
 // MigrateVDIAndWait mocks base method.
-func (m *MockXoClient) MigrateVDIAndWait(ctx context.Context, vdiID, targetSRID uuid.UUID) (uuid.UUID, error) {
+func (m *MockXoClient) MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MigrateVDIAndWait", ctx, vdiID, targetSRID)
+	ret := m.ctrl.Call(m, "MigrateVDIAndWait", ctx, vdi, targetSRID)
 	ret0, _ := ret[0].(uuid.UUID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // MigrateVDIAndWait indicates an expected call of MigrateVDIAndWait.
-func (mr *MockXoClientMockRecorder) MigrateVDIAndWait(ctx, vdiID, targetSRID any) *gomock.Call {
+func (mr *MockXoClientMockRecorder) MigrateVDIAndWait(ctx, vdi, targetSRID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MigrateVDIAndWait", reflect.TypeOf((*MockXoClient)(nil).MigrateVDIAndWait), ctx, vdiID, targetSRID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MigrateVDIAndWait", reflect.TypeOf((*MockXoClient)(nil).MigrateVDIAndWait), ctx, vdi, targetSRID)
 }
 
 // PBD mocks base method.

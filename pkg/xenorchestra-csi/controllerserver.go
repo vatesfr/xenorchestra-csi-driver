@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/gofrs/uuid"
@@ -148,7 +147,7 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		if vdi.SR != localSR.ID {
 			klog.V(2).InfoS("Migrating VDI to local SR",
 				"vdiID", vdi.ID, "fromSR", vdi.SR, "toSR", localSR.ID)
-			newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, vdi.ID, localSR.ID)
+			newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, *vdi, localSR.ID)
 			if err != nil {
 				klog.ErrorS(err, "Failed to migrate VDI to local SR", "vdiID", vdi.ID, "localSRID", localSR.ID)
 				return nil, status.Errorf(codes.Internal,
@@ -419,7 +418,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}
 		// Recover the stable volume ID stored at creation time.
 		if existingId == "" {
-			return nil, status.Errorf(codes.Internal, "existing VDI %s is missing volume ID in other_config", existingVDI.ID)
+			return nil, status.Errorf(codes.Internal, "existing VDI %s is missing volume ID in tags", existingVDI.ID)
 		}
 		klog.V(5).InfoS("Volume already exists, returning existing VDI", "vdiID", existingVDI.ID, "volumeId", existingId)
 		return &csi.CreateVolumeResponse{
@@ -432,7 +431,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		}, nil
 	}
 
-	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, DriverName, driver.clusterTag)
+	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, driver.Name+"@"+driver.Version, driver.clusterTag)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "volumeName", volumeName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
@@ -492,7 +491,7 @@ func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.
 	}
 
 	if err := driver.xoClient.VDI().Delete(ctx, vdi.ID); err != nil {
-		if isNotFoundError(err) {
+		if clients.IsNotFoundError(err) {
 			// Deleted by a concurrent call between our lookup and Delete
 			klog.V(4).InfoS("VDI not found during delete call, already deleted by concurrent call", "volumeID", volumeID, "vdiID", vdi.ID)
 			return &csi.DeleteVolumeResponse{}, nil
@@ -588,11 +587,4 @@ func publishContextFromVBD(vbd payloads.VBD) map[string]string {
 		"device": *vbd.Device,
 		"vbd":    vbd.ID.String(),
 	}
-}
-
-// isNotFoundError reports whether err is an HTTP 404 from the Xen Orchestra REST
-// API. The SDK does not expose a dedicated sentinel; errors follow the pattern
-// "API error: 404 Not Found - <body>".
-func isNotFoundError(err error) bool {
-	return strings.Contains(err.Error(), "API error: 404 Not Found")
 }

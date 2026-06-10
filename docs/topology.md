@@ -63,8 +63,9 @@ in `AccessibleTopology`. This segment was removed for the following reasons:
   affinity is meaningful. The driver handles this via the `storageType: local`
   StorageClass parameter: in `ControllerPublishVolume` the VDI is migrated to the
   target host's local SR before being attached to the VM. Because migration changes
-  the VDI UUID, the PVC UID stored in `VDI.other_config` is used to re-locate the
-  VDI after VM live-migration. See the
+  the VDI UUID, the stable CSI volume handle stored in the VDI tag
+  `k8s:volumeId:<volumeHandle>` is used to re-locate the VDI after VM live-migration.
+  See the
   [Local Storage reference](references/local-storage.md) for full details.
 
 ## Cross-pool migration restriction

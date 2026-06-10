@@ -14,7 +14,7 @@ This folder is organized by purpose:
 ## Migrations
 
 - [v0.2.0 to v0.3.0](migrations/v0.2.0-to-v0.3.0.md)
-- [v0.3.0 to v0.4.0](migrations/v0.3.0-to-v0.4.0.md) *(optional — backfill `name_label` with volume ID for pre-v0.4.0 VDIs)*
+- [v0.3.0 to v0.4.0](migrations/v0.3.0-to-v0.4.0.md) *(required for existing v0.3.0 dynamic volumes — migrate metadata from `other_config` to tags)*
 
 ## References
 

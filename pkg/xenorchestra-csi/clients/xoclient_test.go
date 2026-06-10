@@ -52,6 +52,9 @@ var (
 	localSRID2 = uuid.Must(uuid.FromString("bbbbbbbb-0000-0000-0000-000000000003"))
 	poolUUID   = uuid.Must(uuid.FromString("eeeeeeee-0000-0000-0000-000000000005"))
 	vdiUUID    = uuid.Must(uuid.FromString("cccccccc-0000-0000-0000-000000000003"))
+	vdiTest    = payloads.VDI{
+		ID: vdiUUID,
+	}
 	newVDIUUID = uuid.Must(uuid.FromString("dddddddd-0000-0000-0000-000000000004"))
 	taskID     = "task-abc-123"
 )
@@ -151,7 +154,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{ID: newVDIUUID},
 			}, nil)
 
-		got, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.NoError(t, err)
 		assert.Equal(t, newVDIUUID, got)
 	})
@@ -164,7 +167,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 			Migrate(gomock.Any(), vdiUUID, localSRID).
 			Return("", migrateErr)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, migrateErr)
 	})
@@ -180,7 +183,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 			Wait(gomock.Any(), taskID).
 			Return(nil, waitErr)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, waitErr)
 	})
@@ -198,7 +201,7 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{Message: "random failure message from XAPI"},
 			}, nil)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), string(payloads.Failure))
 		assert.Contains(t, err.Error(), "random failure message from XAPI")
@@ -217,8 +220,72 @@ func TestMigrateVDIAndWait(t *testing.T) {
 				Result: payloads.Result{ID: uuid.Nil},
 			}, nil)
 
-		_, err := c.MigrateVDIAndWait(context.Background(), vdiUUID, localSRID)
+		_, err := c.MigrateVDIAndWait(context.Background(), vdiTest, localSRID)
 		require.Error(t, err)
+	})
+
+	t.Run("CopiesTagsToNewVDI", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000030"
+		volumeName := "pvc-tag-copy"
+		vdiWithTags := payloads.VDI{
+			ID: vdiUUID,
+			Tags: []string{
+				BuildTag(VDITagKeyVolumeId, volumeId),
+				BuildTag(VDITagKeyPVName, volumeName),
+				"some-other-tag",
+			},
+		}
+
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: newVDIUUID},
+			}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyPVName, volumeName)).
+			Return(nil)
+
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiWithTags, localSRID)
+		require.NoError(t, err)
+		assert.Equal(t, newVDIUUID, got)
+	})
+
+	t.Run("AddTagErrorDoesNotFailMigration", func(t *testing.T) {
+		c, mockVDI, mockTask := newClientWithMockVDIAndTask(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000031"
+		vdiWithTags := payloads.VDI{
+			ID: vdiUUID,
+			Tags: []string{
+				BuildTag(VDITagKeyVolumeId, volumeId),
+			},
+		}
+
+		mockVDI.EXPECT().
+			Migrate(gomock.Any(), vdiUUID, localSRID).
+			Return(taskID, nil)
+		mockTask.EXPECT().
+			Wait(gomock.Any(), taskID).
+			Return(&payloads.Task{
+				Status: payloads.Success,
+				Result: payloads.Result{ID: newVDIUUID},
+			}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), newVDIUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(errors.New("tag write failed"))
+
+		got, err := c.MigrateVDIAndWait(context.Background(), vdiWithTags, localSRID)
+		require.NoError(t, err)
+		assert.Equal(t, newVDIUUID, got)
 	})
 }
 
@@ -227,17 +294,15 @@ func TestMigrateVDIAndWait(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetVDIByVolumeId(t *testing.T) {
-	t.Run("FoundViaOtherConfig", func(t *testing.T) {
+	t.Run("FoundViaTag", func(t *testing.T) {
 		c, mockVDI := newClientWithMockVDI(t)
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000010"
 		vdi := &payloads.VDI{
-			ID: vdiUUID,
-			OtherConfig: map[string]string{
-				VDIOtherConfigKeyVolumeId: volumeId,
-			},
+			ID:   vdiUUID,
+			Tags: []string{BuildTag(VDITagKeyVolumeId, volumeId)},
 		}
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
 			Return([]*payloads.VDI{vdi}, nil)
@@ -255,7 +320,7 @@ func TestGetVDIByVolumeId(t *testing.T) {
 			ID:        vdiUUID,
 			NameLabel: "csi-" + volumeId + "-pvc-xyz",
 		}
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
@@ -263,17 +328,119 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, fallbackFilter).
 			Return([]*payloads.VDI{vdi}, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdiUUID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdiUUID, BuildTag(VDITagKeyPVName, "pvc-xyz")).
+			Return(nil)
 
 		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
 		require.NoError(t, err)
 		assert.Equal(t, vdi, got)
 	})
 
-	t.Run("NotFoundInBothLookups", func(t *testing.T) {
+	t.Run("NotFoundInAllLookups", func(t *testing.T) {
 		c, mockVDI := newClientWithMockVDI(t)
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000012"
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeNotFound)
+	})
+
+	t.Run("FoundViaDirectUUID", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000017"
+		vdi := &payloads.VDI{
+			ID:              uuid.FromStringOrNil(volumeId),
+			NameLabel:       "csi-pvc-static",
+			NameDescription: "VDI managed by the Kubernetes CSI; pv-name=pvc-static",
+		}
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(vdi, nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdi.ID, BuildTag(VDITagKeyVolumeId, volumeId)).
+			Return(nil)
+		mockVDI.EXPECT().
+			AddTag(gomock.Any(), vdi.ID, BuildTag(VDITagKeyPVName, "pvc-static")).
+			Return(nil)
+
+		got, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, got)
+	})
+
+	t.Run("DirectUUIDNotFound", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000018"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrVolumeNotFound)
+	})
+
+	t.Run("DirectUUIDAPIError", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "aaaaaaaa-0000-0000-0000-000000000019"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
+		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
+		apiErr := errors.New("connection refused")
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, primaryFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, fallbackFilter).
+			Return([]*payloads.VDI{}, nil)
+		mockVDI.EXPECT().
+			Get(gomock.Any(), uuid.FromStringOrNil(volumeId)).
+			Return(nil, apiErr)
+
+		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, apiErr)
+	})
+
+	t.Run("NonUUIDVolumeIdSkipsDirectLookup", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		volumeId := "not-a-uuid"
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
@@ -287,11 +454,11 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		assert.ErrorIs(t, err, ErrVolumeNotFound)
 	})
 
-	t.Run("AmbiguousViaOtherConfig", func(t *testing.T) {
+	t.Run("AmbiguousViaTag", func(t *testing.T) {
 		c, mockVDI := newClientWithMockVDI(t)
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000013"
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
 			Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
@@ -305,7 +472,7 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		c, mockVDI := newClientWithMockVDI(t)
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000014"
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
@@ -324,7 +491,7 @@ func TestGetVDIByVolumeId(t *testing.T) {
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000015"
 		apiErr := errors.New("connection refused")
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
 			Return(nil, apiErr)
@@ -339,7 +506,7 @@ func TestGetVDIByVolumeId(t *testing.T) {
 
 		volumeId := "aaaaaaaa-0000-0000-0000-000000000016"
 		apiErr := errors.New("timeout")
-		primaryFilter := fmt.Sprintf("other_config:%s:%s", VDIOtherConfigKeyVolumeId, volumeId)
+		primaryFilter := BuildTagFilter(VDITagKeyVolumeId, volumeId)
 		fallbackFilter := fmt.Sprintf("name_label:%s", volumeId)
 		mockVDI.EXPECT().
 			GetAll(gomock.Any(), 2, primaryFilter).
@@ -351,6 +518,93 @@ func TestGetVDIByVolumeId(t *testing.T) {
 		_, err := c.GetVDIByVolumeId(context.Background(), volumeId)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, apiErr)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// FindVDIByVolumeName
+// ---------------------------------------------------------------------------
+
+func TestFindVDIByVolumeName(t *testing.T) {
+	const volumeName = "pvc-my-volume"
+	volumeId := "aaaaaaaa-0000-0000-0000-000000000020"
+
+	t.Run("Found", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		vdi := &payloads.VDI{
+			ID: vdiUUID,
+			Tags: []string{
+				BuildTag(VDITagKeyPVName, volumeName),
+				BuildTag(VDITagKeyVolumeId, volumeId),
+			},
+		}
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, BuildTagFilter(VDITagKeyPVName, volumeName)).
+			Return([]*payloads.VDI{vdi}, nil)
+
+		gotVDI, gotId, err := c.FindVDIByVolumeName(context.Background(), volumeName)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, gotVDI)
+		assert.Equal(t, volumeId, gotId)
+	})
+
+	t.Run("FoundButMissingVolumeIdTag", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		// VDI has the pvName tag but no volumeId tag — ParseTagValue returns "".
+		vdi := &payloads.VDI{
+			ID:   vdiUUID,
+			Tags: []string{BuildTag(VDITagKeyPVName, volumeName)},
+		}
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, BuildTagFilter(VDITagKeyPVName, volumeName)).
+			Return([]*payloads.VDI{vdi}, nil)
+
+		gotVDI, gotId, err := c.FindVDIByVolumeName(context.Background(), volumeName)
+		require.NoError(t, err)
+		assert.Equal(t, vdi, gotVDI)
+		assert.Empty(t, gotId)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, BuildTagFilter(VDITagKeyPVName, volumeName)).
+			Return([]*payloads.VDI{}, nil)
+
+		gotVDI, gotId, err := c.FindVDIByVolumeName(context.Background(), volumeName)
+		require.ErrorIs(t, err, ErrVolumeNotFound)
+		assert.Nil(t, gotVDI)
+		assert.Empty(t, gotId)
+	})
+
+	t.Run("Ambiguous", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, BuildTagFilter(VDITagKeyPVName, volumeName)).
+			Return([]*payloads.VDI{{ID: vdiUUID}, {ID: newVDIUUID}}, nil)
+
+		gotVDI, gotId, err := c.FindVDIByVolumeName(context.Background(), volumeName)
+		require.ErrorIs(t, err, ErrVolumeNameAmbiguous)
+		assert.Nil(t, gotVDI)
+		assert.Empty(t, gotId)
+	})
+
+	t.Run("APIError", func(t *testing.T) {
+		c, mockVDI := newClientWithMockVDI(t)
+
+		apiErr := errors.New("connection refused")
+		mockVDI.EXPECT().
+			GetAll(gomock.Any(), 2, BuildTagFilter(VDITagKeyPVName, volumeName)).
+			Return(nil, apiErr)
+
+		gotVDI, gotId, err := c.FindVDIByVolumeName(context.Background(), volumeName)
+		require.ErrorIs(t, err, apiErr)
+		assert.Nil(t, gotVDI)
+		assert.Empty(t, gotId)
 	})
 }
 

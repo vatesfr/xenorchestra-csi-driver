@@ -15,15 +15,20 @@ limitations under the License.
 */
 package clients
 
-// VDIOtherConfigKeyVolumeId is the XO VDI other_config key that stores the
+// tagPrefix is the common prefix for all VDI tags used by this driver.
+const tagPrefix = "k8s"
+
+// VDITagKeyVolumeId is the key segment used in the VDI tag that stores the
 // CSI volume ID (UUID) generated at CreateVolume time.
-// This UUID is stable across SR migrations (VDI UUID changes, volume ID does not).
-const VDIOtherConfigKeyVolumeId = "kubernetes_volume_id"
+// Full tag format: "k8s:volumeId:<uuid>"
+const VDITagKeyVolumeId = "volumeId"
 
-// VDIOtherConfigKeyCreatedBy is the key in VDI's other_config map that identifies
-// the component that created the VDI (always set to the driver name).
-const VDIOtherConfigKeyCreatedBy = "kubernetes_created_by"
+// VDITagKeyPVName is the key segment used in the VDI tag that stores the
+// Kubernetes PersistentVolume name associated with this VDI.
+// Full tag format: "k8s:pvName:<pv-name>"
+const VDITagKeyPVName = "pvName"
 
-// VDIOtherConfigKeyPVName is the key in VDI's other_config map that stores
-// the Kubernetes PersistentVolume name associated with this VDI.
-const VDIOtherConfigKeyPVName = "kubernetes_pv_name"
+// VDITagKeyManagedBy is the key segment used in the VDI tag that identifies
+// the driver that created and manages this VDI.
+// Full tag format: "k8s:managedBy:<driver-name>@<version>"
+const VDITagKeyManagedBy = "managedBy"
