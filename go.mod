@@ -11,7 +11,7 @@ require (
 	github.com/onsi/gomega v1.41.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vatesfr/xenorchestra-go-sdk v1.15.1
+	github.com/vatesfr/xenorchestra-go-sdk v1.16.0
 	github.com/vatesfr/xenorchestra-k8s-common v0.2.0
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.81.1
