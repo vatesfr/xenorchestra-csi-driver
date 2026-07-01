@@ -37,7 +37,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@v9.2.1
         with:
           args: --timeout=5m --config=.golangci.yml
       - name: Unit
