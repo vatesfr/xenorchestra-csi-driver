@@ -73,4 +73,9 @@ const (
 	// VolumeContextKeyStorageType carries the storageType value through the CSI
 	// lifecycle (CreateVolume → ControllerPublishVolume).
 	VolumeContextKeyStorageType = "storageType"
+
+	// ParameterStorageRepository is the VolumeAttributesClass parameter that
+	// specifies the target Storage Repository (SR) UUID for VDI migration.
+	// The target SR must be in the same pool as the current VDI.
+	ParameterStorageRepository = "storageRepositoryId"
 )

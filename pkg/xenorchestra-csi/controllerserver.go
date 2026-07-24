@@ -73,6 +73,13 @@ func (driver *xenorchestraCSIDriver) ControllerGetCapabilities(ctx context.Conte
 					},
 				},
 			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_MODIFY_VOLUME,
+					},
+				},
+			},
 		},
 	}, nil
 }
@@ -84,9 +91,92 @@ func (driver *xenorchestraCSIDriver) ControllerGetVolume(context.Context, *csi.C
 }
 
 // ControllerModifyVolume implements Driver.
-func (driver *xenorchestraCSIDriver) ControllerModifyVolume(context.Context, *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
-	klog.Error("ControllerModifyVolume is not implemented")
-	return nil, status.Error(codes.Unimplemented, "ControllerModifyVolume is not implemented")
+// It allows migrating a VDI to a different Storage Repository (SR) within the
+// same pool, triggered by the external-resizer when a VolumeAttributesClass is
+// applied to a PVC.
+func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	klog.V(2).InfoS("ControllerModifyVolume called", "request", req)
+
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
+	}
+
+	targetSRStr := req.GetMutableParameters()[ParameterStorageRepository]
+	if targetSRStr == "" {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"mutable parameter %q is required for migration", ParameterStorageRepository)
+	}
+
+	targetSRUUID, err := uuid.FromString(targetSRStr)
+	if err != nil || targetSRUUID == uuid.Nil {
+		klog.ErrorS(err, "invalid SR UUID", "srID", targetSRStr)
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid SR UUID %q: must be a valid UUID", targetSRStr)
+	}
+
+	// Look up the existing VDI.
+	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeID)
+	if err != nil {
+		if errors.Is(err, clients.ErrVolumeNotFound) {
+			klog.ErrorS(err, "Volume handle not found during ControllerModifyVolume", "volumeID", volumeID)
+			return nil, status.Errorf(codes.NotFound, "volume %s not found: %v", volumeID, err)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeID, err)
+	}
+
+	// No-op if the VDI is already on the target SR.
+	if vdi.SR == targetSRUUID {
+		klog.V(5).InfoS("VDI is already on the target SR, nothing to do",
+			"vdiID", vdi.ID, "srID", vdi.SR)
+		return &csi.ControllerModifyVolumeResponse{}, nil
+	}
+
+	// Look up the target SR to verify it exists and is in the same pool.
+	targetSR, err := driver.xoClient.SR().Get(ctx, targetSRUUID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to look up target SR", "srID", targetSRUUID)
+		return nil, status.Errorf(codes.NotFound,
+			"failed to look up SR %s: %v", targetSRUUID, err)
+	}
+
+	if vdi.PoolID != targetSR.Pool {
+		klog.ErrorS(nil, "Target SR is not in the same pool as the VDI",
+			"vdiPool", vdi.PoolID, "srPool", targetSR.Pool)
+		return nil, status.Errorf(codes.InvalidArgument,
+			"SR %s is not in the same pool as VDI %s (vdiPool=%s, srPool=%s)",
+			targetSRUUID, vdi.ID, vdi.PoolID, targetSR.Pool)
+	}
+
+	// Check if VDI is currently attached to any VM; refuse to migrate a live-attached VDI.
+	// vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, vdi)
+	// if err != nil {
+	// 	klog.ErrorS(err, "Failed to check if VDI is attached to any VM", "vdiID", vdi.ID)
+	// 	return nil, status.Errorf(codes.Internal, "failed to check VDI attachments: %v", err)
+	// }
+	// for _, vbd := range vbds {
+	// 	if vbd.Attached {
+	// 		klog.ErrorS(nil, "VDI is currently attached to a VM, cannot migrate",
+	// 			"vdiID", vdi.ID, "vmID", vbd.VM)
+	// 		return nil, status.Errorf(codes.FailedPrecondition,
+	// 			"VDI %s is currently attached to VM %s; detach the volume before migrating",
+	// 			vdi.ID, vbd.VM)
+	// 	}
+	// }
+
+	// Perform the migration.
+	klog.V(5).InfoS("Migrating VDI to target SR",
+		"vdiID", vdi.ID, "fromSR", vdi.SR, "toSR", targetSRUUID)
+	newVDIUUID, err := driver.xoClient.MigrateVDIAndWait(ctx, *vdi, targetSRUUID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to migrate VDI", "vdiID", vdi.ID, "targetSR", targetSRUUID)
+		return nil, status.Errorf(codes.Internal,
+			"failed to migrate VDI %s to SR %s: %v", vdi.ID, targetSRUUID, err)
+	}
+	klog.V(5).InfoS("VDI migrated successfully",
+		"oldVDIID", vdi.ID, "newVDIID", newVDIUUID, "srID", targetSRUUID)
+
+	return &csi.ControllerModifyVolumeResponse{}, nil
 }
 
 // ControllerPublishVolume implements Driver.
@@ -328,7 +418,8 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	poolIDStr, hasPoolParam := params[ParameterPoolID]
 	ar := req.GetAccessibilityRequirements()
 
-	storageType := params[ParameterStorageType]
+	// Requested storage type: "shared" (default) or "local".
+	storageType, hasStorageTypeParam := params[ParameterStorageType]
 	if storageType == "" {
 		storageType = StorageTypeShared
 	}
@@ -337,11 +428,66 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			"invalid storageType %q: must be %q or %q", storageType, StorageTypeShared, StorageTypeLocal)
 	}
 
+	// Pool to provision into.
 	var pool *payloads.Pool
+	// Storage Repository (SR) to provision into.
 	var sr *payloads.StorageRepository
 
-	if hasPoolParam && poolIDStr != "" {
-		// Case 1: explicit poolId in StorageClass.
+	// Case 1: explicit target SR in VolumeAttributesClass (VAC) parameters.
+	// VAC parameters are passed in mutable_parameters (CSI 1.10+, Kubernetes 1.31+).
+	targetSRStr, hasTargetSR := req.GetMutableParameters()[ParameterStorageRepository]
+	if hasTargetSR && targetSRStr != "" {
+		targetSRUUID, err := uuid.FromString(targetSRStr)
+		if err != nil || targetSRUUID == uuid.Nil {
+			klog.ErrorS(err, "Invalid SR UUID in VolumeAttributesClass", "srID", targetSRStr)
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid SR UUID %q in VolumeAttributesClass: must be a valid UUID", targetSRStr)
+		}
+
+		targetSR, err := driver.xoClient.SR().Get(ctx, targetSRUUID)
+		if err != nil {
+			klog.ErrorS(err, "Failed to look up SR from VolumeAttributesClass", "srID", targetSRUUID)
+			return nil, status.Errorf(codes.InvalidArgument,
+				"SR %s specified in VolumeAttributesClass not found: %v", targetSRUUID, err)
+		}
+
+		// Verify the SR is in the selected pool.
+		if hasPoolParam && poolIDStr != "" && targetSR.Pool.String() != poolIDStr {
+			klog.ErrorS(nil, "Target SR is not in the selected pool",
+				"srPool", targetSR.Pool, "selectedPool", poolIDStr)
+			return nil, status.Errorf(codes.InvalidArgument,
+				"SR %s is not in the selected pool %s (srPool=%s)",
+				targetSRUUID, poolIDStr, targetSR.Pool)
+		}
+
+		// If storageType is explicitly specified, validate it against the SR type.
+		if hasStorageTypeParam {
+			// Verify the SR type matches the requested storageType.
+			wantShared := storageType == StorageTypeShared
+			if targetSR.Shared != wantShared {
+				srType := "local"
+				if targetSR.Shared {
+					srType = "shared"
+				}
+				klog.ErrorS(nil, "Target SR type does not match storageType",
+					"targetSRType", srType, "storageType", storageType)
+				return nil, status.Errorf(codes.InvalidArgument,
+					"SR %s is %s but requested storageType is %q", targetSRUUID, srType, storageType)
+			}
+		}
+
+		sr = targetSR
+
+		// Fetch the pool object for topology and volume context.
+		pool, err = driver.xoClient.Pool().Get(ctx, targetSR.Pool)
+		if err != nil {
+			klog.ErrorS(err, "Failed to get pool from target SR", "poolID", targetSR.Pool)
+			return nil, status.Errorf(codes.InvalidArgument,
+				"pool %s of SR %s not found: %v", targetSR.Pool, targetSRUUID, err)
+		}
+		klog.V(4).InfoS("Using SR from VolumeAttributesClass", "srID", targetSR.ID, "poolID", pool.ID)
+	} else if hasPoolParam && poolIDStr != "" {
+		// Case 2: explicit poolId in StorageClass.
 		poolUUID, err := uuid.FromString(poolIDStr)
 		if err != nil || poolUUID == uuid.Nil {
 			return nil, status.Errorf(codes.InvalidArgument, "parameter %q must be a valid UUID, got %q", ParameterPoolID, poolIDStr)
@@ -355,7 +501,7 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 			return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 		}
 	} else {
-		// Case 2: no poolId — derive from accessibility_requirements.
+		// Case 3: no poolId — derive from accessibility_requirements.
 		// Per the CSI spec, preferred topologies are tried first (in order),
 		// then requisite topologies as fallback.
 		orderedPoolIDs, err := topology.OrderedPoolIDs(ar)
@@ -393,7 +539,8 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 	// the VDI lands on local storage from the start rather than on the shared
 	// DefaultSR. That will help avoid an extra migration step in the common case
 	// where the volume is created and attached to the same node.
-	if storageType == StorageTypeLocal {
+	// Skip this override when a specific SR was provided via VolumeAttributesClass.
+	if !hasTargetSR && storageType == StorageTypeLocal {
 		localSRs, err := driver.xoClient.FindLocalSRsForPool(ctx, pool.ID)
 		if err != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "no local SR available in pool %s: %v", pool.ID, err)
