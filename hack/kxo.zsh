@@ -97,12 +97,14 @@ kxo() {
 
     # Execute kubectl command
     case "$cmd" in
-      apply|a)
-        local _cluster_tag="${CLUSTER_TAG:-k8s-managed-$USER}"
-        sed \
-          -e "s|image: .*xenorchestra-csi-driver.*|image: ${IMAGE:-&}|g" \
-          -e "s|\"--cluster-tag=[^\"]*\"|\"--cluster-tag=${_cluster_tag}\"|g" \
-          "$manifest_file" | kubectl apply -f -
+       apply|a)
+         local _cluster_tag="${CLUSTER_TAG:-k8s-managed-$USER}"
+         local _vdi_prefix="${VDI_NAME_PREFIX:-$USER-csi-}"
+         sed \
+           -e "s|image: .*xenorchestra-csi-driver.*|image: ${IMAGE:-&}|g" \
+           -e "s|\"--cluster-tag=[^\"]*\"|\"--cluster-tag=${_cluster_tag}\"|g" \
+           -e "s|\"--vdi-name-prefix=[^\"]*\"|\"--vdi-name-prefix=${_vdi_prefix}\"|g" \
+           "$manifest_file" | kubectl apply -f -
         ;;
       delete|d)
         kubectl delete -f "$manifest_file"

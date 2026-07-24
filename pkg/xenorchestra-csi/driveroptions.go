@@ -18,6 +18,7 @@ package xenorchestracsi
 import (
 	"flag"
 	"fmt"
+	"time"
 )
 
 // NodeMetadataSource controls how the CSI node plugin resolves pool ID and VM
@@ -57,6 +58,9 @@ type DriverOptions struct {
 	// automatic VDI placement when no poolId or topology constraints are provided.
 	// Defaults to DefaultKubernetesPoolTag ("k8s-pool").
 	KubernetesPoolTag string
+	// XoClientTimeout is the HTTP client timeout for XenOrchestra API requests.
+	// Defaults to 30s.
+	XoClientTimeout time.Duration
 }
 
 func (o *DriverOptions) AddFlags() *flag.FlagSet {
@@ -83,6 +87,8 @@ func (o *DriverOptions) AddFlags() *flag.FlagSet {
 	fs.StringVar(&o.KubernetesPoolTag, "kubernetes-pool-tag", DefaultKubernetesPoolTag,
 		"Tag added to Xen Orchestra pools eligible for automatic volume placement. "+
 			"Used when no poolId or topology constraints are provided.")
+	fs.DurationVar(&o.XoClientTimeout, "xo-client-timeout", 30*time.Second,
+		"HTTP timeout for XenOrchestra API requests (e.g. \"30s\").")
 	fs.Func("node-metadata-source",
 		`Source used by the node plugin to resolve pool ID and VM identity.
 Allowed values:

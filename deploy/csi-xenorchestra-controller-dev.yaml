@@ -74,6 +74,8 @@ spec:
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
             - "--cluster-tag=k8s-managed"
+            - "--xo-client-timeout=240s"
+            - "--vdi-name-prefix=csi-"
           ports:
             - containerPort: 29602
               name: healthz
