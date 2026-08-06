@@ -105,16 +105,20 @@ run: ## Run the application
 mock: ## Generate mocks
 	go generate ./...
 
-.PHONY: helm-lint
-helm-lint:
-	ct --config hack/ct.yml lint --check-version-increment=false
+############
 
 .PHONY: helm-unit
-helm-unit: ## Lint and render the Helm chart
-	helm lint charts/xenorchestra-csi-driver
-	helm template --namespace kube-system \
-		--values charts/xenorchestra-csi-driver/ci/values.yaml \
+helm-unit: ## Helm Unit Tests
+	@helm lint charts/xenorchestra-csi-driver
+	@helm template --namespace kube-system \
+		-f charts/xenorchestra-csi-driver/ci/values.yaml \
 		xenorchestra-csi-driver charts/xenorchestra-csi-driver >/dev/null
+	helm template --namespace kube-system \
+		--set tests.enabled=true \
+		--set tests.storageClassName=xo-test \
+		--set tests.image=null \
+		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
+		grep -q 'helm.sh/hook: test'
 	test "$$(helm template --namespace kube-system \
 		--set serviceAccount.create=false \
 		--set rbac.create=false \

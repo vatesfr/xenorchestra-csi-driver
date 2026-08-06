@@ -78,6 +78,20 @@ node:
     limits:
       memory: 1000Mi
 
+tests:
+  # The Helm test provisions and mounts a real CSI volume. Enable it explicitly
+  # and provide a StorageClass using this driver before running `helm test`.
+  enabled: false
+  storageClassName: ""
+  size: 1Gi
+  image:
+    repository: busybox
+    tag: "1.37.0"
+    pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 sidecars:
   livenessProbe:
     image:
