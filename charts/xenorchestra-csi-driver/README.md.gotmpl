@@ -1,0 +1,73 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+CSI driver for Xen Orchestra: it provides persistent storage for Kubernetes workloads on XenServer/XCP-ng infrastructure, with dynamic volume provisioning (one VDI per PVC) and support for pinning volumes to a pool or to a host-local storage repository.
+
+> **Warning**
+> This driver is under active development and must not be used in production.
+
+{{ template "chart.homepageLine" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+## Requirements
+
+| Component | Minimum version |
+| --------- | --------------- |
+| XCP-ng | 8.3+ |
+| Xen Orchestra | 5.110.1+ |
+| Kubernetes | 1.26+ |
+| Helm | 3+ |
+
+The chart defaults to `driver.nodeMetadataSource=kubernetes`, which requires the
+[XenOrchestra Cloud Controller Manager](https://github.com/vatesfr/xenorchestra-cloud-controller-manager):
+the CCM sets `spec.providerID` on each Node and the CSI node plugin uses it to
+resolve the pool and VM identities. Without the CCM, set
+`driver.nodeMetadataSource=xo-api` so the driver queries the Xen Orchestra API directly.
+
+## Create the credentials secret
+
+Create a `config.yaml` file for the driver:
+
+```yaml
+# xo-config.yaml
+url: https://xo.example.com
+insecure: false
+token: "<your-xo-api-token>"
+```
+
+Store it as a Kubernetes secret:
+
+```shell
+kubectl -n kube-system create secret generic xenorchestra-csi-driver \
+  --from-file=config.yaml=xo-config.yaml
+```
+
+If the CCM is already installed, you can reuse its secret by setting
+`existingConfigSecret` instead of creating a new one. Credentials may also be
+provided inline under `config` (the chart then creates the secret) or through
+`driver.envFrom`.
+
+## Install the chart
+
+```shell
+helm upgrade --install xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-csi-driver \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
+```
+
+The controller, node plugin, and `CSIDriver` resource can be toggled independently
+with `controller.enabled`, `node.enabled`, and `csidriver.enabled`.
+
+See the [installation guide](https://github.com/vatesfr/xenorchestra-csi-driver/blob/main/docs/install.md)
+for StorageClass examples, testing, and the full parameter reference.
+
+{{ template "chart.valuesSection" . }}

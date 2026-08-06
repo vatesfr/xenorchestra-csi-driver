@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "xenorchestra-csi-driver.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "xenorchestra-csi-driver.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "xenorchestra-csi-driver.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "xenorchestra-csi-driver.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: controller
+      annotations:
+        {{- if and .Values.config (not .Values.existingConfigSecret) }}
+        checksum/config: {{ toJson .Values.config | sha256sum }}
+        {{- end }}
+        {{- with .Values.controller.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ include "xenorchestra-csi-driver.controllerServiceAccountName" . }}
+      hostNetwork: {{ .Values.controller.hostNetwork }}
+      dnsPolicy: {{ .Values.controller.dnsPolicy }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: liveness-probe
+          image: "{{ .Values.sidecars.livenessProbe.image.repository }}:{{ .Values.sidecars.livenessProbe.image.tag }}"
+          imagePullPolicy: {{ .Values.sidecars.livenessProbe.image.pullPolicy }}
+          args:
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=:29602
+            - --v=2
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            {{- toYaml .Values.sidecars.livenessProbe.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: xenorchestra-csi-driver
+          image: {{ include "xenorchestra-csi-driver.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --v={{ .Values.driver.logVerbosityLevel }}
+            - --endpoint=unix:///csi/csi.sock
+            - --node-name=$(KUBE_NODE_NAME)
+            {{- if or .Values.config .Values.existingConfigSecret }}
+            - --config-file=/etc/xenorchestra/config.yaml
+            {{- end }}
+            - --vdi-name-prefix={{ .Values.driver.vdiNamePrefix }}
+            - --xo-client-timeout={{ .Values.driver.xoClientTimeout }}
+            - --cluster-tag={{ .Values.driver.clusterTag }}
+            {{- with .Values.driver.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- with .Values.driver.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.driver.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: healthz
+              containerPort: 29602
+            - name: metrics
+              containerPort: 29604
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            {{- if or .Values.config .Values.existingConfigSecret }}
+            - name: xo-cloud-config
+              mountPath: /etc/xenorchestra
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: csi-attacher
+          image: "{{ .Values.sidecars.attacher.image.repository }}:{{ .Values.sidecars.attacher.image.tag }}"
+          imagePullPolicy: {{ .Values.sidecars.attacher.image.pullPolicy }}
+          args:
+            - --v={{ .Values.driver.logVerbosityLevel }}
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=:29605
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 29605
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.sidecars.attacher.resources | nindent 12 }}
+        - name: csi-provisioner
+          image: "{{ .Values.sidecars.provisioner.image.repository }}:{{ .Values.sidecars.provisioner.image.tag }}"
+          imagePullPolicy: {{ .Values.sidecars.provisioner.image.pullPolicy }}
+          args:
+            - --v={{ .Values.driver.logVerbosityLevel }}
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=:29606
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 29606
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.sidecars.provisioner.resources | nindent 12 }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        {{- if or .Values.config .Values.existingConfigSecret }}
+        - name: xo-cloud-config
+          secret:
+            secretName: {{ include "xenorchestra-csi-driver.configSecretName" . }}
+            items:
+              - key: {{ .Values.existingConfigSecretKey }}
+                path: config.yaml
+            defaultMode: 416
+        {{- end }}

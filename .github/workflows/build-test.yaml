@@ -33,9 +33,6 @@ jobs:
           go generate ./...
           git diff --exit-code
 
-      - name: Set up docker buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -45,9 +42,8 @@ jobs:
       - name: Build
         timeout-minutes: 10
         run: make build
+      - name: Set up docker buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build image
         timeout-minutes: 10
-        run: make images
-        env:
-          USERNAME: ${{ github.repository_owner }}
-          TAG: pr-${{ github.sha }}
+        run: VERSION=v0.0.0-test make images

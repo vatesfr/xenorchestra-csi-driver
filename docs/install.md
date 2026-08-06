@@ -117,11 +117,13 @@ kubectl -n kube-system create secret generic xenorchestra-config \
   --from-env-file=xo-config.env
 ```
 
+Reference that Secret from your Helm values:
+
 ```yaml
-# In your deployment manifest
-envFrom:
-  - secretRef:
-      name: xenorchestra-config
+driver:
+  envFrom:
+    - secretRef:
+        name: xenorchestra-config
 ```
 
 > ⚠️ **Note:** Environment variables take precedence only when the config file is not found.
@@ -129,48 +131,50 @@ envFrom:
 
 ### 3. Install the driver
 
-Using the installation script (recommended):
+Using Helm:
 
 ```bash
-# Install from the latest published manifests
-./deploy/install-driver.sh
-
-# Or install from your local clone
-./deploy/install-driver.sh local
+helm upgrade --install xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-cloud-controller-manager \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
 ```
 
-The script applies the following manifests in order:
+#### MicroK8s kubelet path
 
-| Manifest | Purpose |
-| -------- | ------- |
-| `csi-xenorchestra-driver.yaml` | `CSIDriver` resource |
-| `rbac-csi-xenorchestra-node.yaml` | Node plugin RBAC |
-| `csi-xenorchestra-node.yaml` | Node plugin `DaemonSet` |
-| `rbac-csi-xenorchestra-controller.yaml` | Controller RBAC |
-| `csi-xenorchestra-controller.yaml` | Controller `StatefulSet` |
+MicroK8s stores kubelet data under
+`/var/snap/microk8s/common/var/lib/kubelet` instead of the standard
+`/var/lib/kubelet`. Set the correct path when installing the chart from OCI:
 
-**Customizing for Environment Variables:**
-
-If you want to use environment variables instead of the config file, modify the controller deployment:
-
-```yaml
-# In deploy/csi-xenorchestra-controller.yaml
-containers:
-  - name: xenorchestra-csi-driver
-    # ... existing args ...
-    envFrom:
-      - secretRef:
-          name: xenorchestra-config  # Secret created from .env file
-    # Remove or comment out the config-file volume mount
-    # volumeMounts:
-    #   - name: xenorchestra-config
-    #     mountPath: /etc/xenorchestra
+```bash
+helm upgrade --install xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-cloud-controller-manager \
+  --set node.kubeletRootDir=/var/snap/microk8s/common/var/lib/kubelet \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
 ```
+
+When installing from a local checkout, the equivalent override is already
+provided in `charts/xenorchestra-csi-driver/values.microk8s.yaml`:
+
+```bash
+helm upgrade --install xenorchestra-csi-driver \
+  ./charts/xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-cloud-controller-manager \
+  --values charts/xenorchestra-csi-driver/values.microk8s.yaml
+```
+
+Credentials may instead be passed inline under `config` (the chart creates a
+Secret), or through `driver.envFrom`.
+
+### Verify
 
 Verify that the pods are running:
 
 ```bash
-kubectl -n kube-system get pods -l app=csi-xenorchestra-controller
+kubectl -n kube-system get pods \
+  -l app.kubernetes.io/instance=xenorchestra-csi-driver
 ```
 
 ### 4. Create a StorageClass
@@ -417,29 +421,10 @@ kubectl apply -f examples/csi-app.yaml
 
 ---
 
-## MicroK8s – kubelet path
-
-When running on MicroK8s, the kubelet socket path differs from a standard installation.
-The node plugin manifest must use:
-
-```text
-/var/snap/microk8s/common/var/lib/kubelet/
-```
-
-instead of the default:
-
-```text
-/var/lib/kubelet/
-```
-
-Edit `deploy/csi-xenorchestra-node.yaml` accordingly before applying.
-
----
-
 ## Uninstall
 
 ```bash
-./deploy/uninstall-driver.sh
+helm uninstall xenorchestra-csi-driver --namespace kube-system
 ```
 
 To also remove the credentials secret (if not used by the CCM):
