@@ -1,0 +1,125 @@
+image:
+  repository: ghcr.io/vatesfr/xenorchestra-csi-driver
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Use either an existing secret, an inline config, or extraEnv/envFrom.
+existingConfigSecret: ""
+existingConfigSecretKey: config.yaml
+config: {}
+
+serviceAccount:
+  # Set to false to use existing accounts. Empty names then select "default".
+  create: true
+  annotations: {}
+  controllerName: ""
+  nodeName: ""
+
+rbac:
+  create: true
+
+driver:
+  name: csi.xenorchestra.vates.tech
+  logVerbosityLevel: 2
+  vdiNamePrefix: csi-
+  xoClientTimeout: 30s
+  clusterTag: k8s-managed
+  nodeMetadataSource: kubernetes
+  extraArgs: []
+  extraEnv: []
+  envFrom: []
+
+controller:
+  replicas: 1
+  priorityClassName: system-cluster-critical
+  hostNetwork: false
+  dnsPolicy: ClusterFirstWithHostNet
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoSchedule
+  affinity: {}
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 10m
+      memory: 20Mi
+    limits:
+      memory: 500Mi
+
+node:
+  priorityClassName: system-node-critical
+  hostNetwork: false
+  dnsPolicy: ClusterFirstWithHostNet
+  # Override with /var/snap/microk8s/common/var/lib/kubelet for MicroK8s.
+  kubeletRootDir: /var/lib/kubelet
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: Exists
+  affinity: {}
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 10m
+      memory: 20Mi
+    limits:
+      memory: 1000Mi
+
+sidecars:
+  livenessProbe:
+    image:
+      repository: registry.k8s.io/sig-storage/livenessprobe
+      tag: v2.18.0
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        memory: 100Mi
+  attacher:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-attacher
+      tag: v4.11.0
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        memory: 100Mi
+  provisioner:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v6.2.0
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        memory: 100Mi
+  registrar:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      tag: v2.16.0
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        memory: 100Mi

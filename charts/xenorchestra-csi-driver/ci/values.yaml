@@ -1,0 +1,7 @@
+image:
+  tag: edge
+
+config:
+  url: https://xoa.example.com
+  insecure: false
+  token: "test-token"

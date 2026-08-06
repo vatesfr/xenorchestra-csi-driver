@@ -10,6 +10,7 @@ This folder is organized by purpose:
 - [Installation guide](install.md)
 - [Topology and Placement](topology.md)
 - [Developer guide](development.md)
+- [Release process](release.md)
 
 ## Migrations
 

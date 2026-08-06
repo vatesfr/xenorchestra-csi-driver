@@ -1,0 +1,15 @@
+apiVersion: v2
+name: xenorchestra-csi-driver
+description: CSI driver for Xen Orchestra
+type: application
+home: https://github.com/vatesfr/xenorchestra-csi-driver
+icon: https://cdn.vates.tech/logos-update/logos/devops.svg
+sources:
+  - https://github.com/vatesfr/xenorchestra-csi-driver
+keywords:
+  - csi
+  - storage
+  - xenorchestra
+  - kubernetes
+version: 0.4.0
+appVersion: v0.4.0

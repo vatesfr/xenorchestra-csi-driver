@@ -74,37 +74,18 @@ for full details and manual recovery steps.
 
 ## Install driver on a Kubernetes cluster
 
-An example of an install with kubectl can be found in the './deploy' folder. You may need to adjust this file to fit your actual installation; see below for more information.
-
-### Prerequisites
-* The controller deployment depends on the CCM credentials config secret ([See here](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md#deploy-ccm)).
-
-### Quick Start with the PoC
+Install the driver with Helm, reusing the Xen Orchestra CCM credentials Secret:
 
 ```bash
-# Create a registry credential secret for ghcr.io
-kubectl -n kube-system create secret docker-registry regcred --docker-server=<your-registry-server> --docker-username=<your-name> --docker-password=<your-pword> --docker-email=<your-email>
-
-# Install the driver
-./deploy/install-driver.sh
-
-# Alternative: Install the driver from local repo
-./deploy/install-driver.sh local
-
-# Create a StorageClass
-kubectl apply -f examples/csi-storageclass.yaml
-
-# Install the driver
-./deploy/uninstall-driver.sh
+helm upgrade --install xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-cloud-controller-manager \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
 ```
 
-### MicroK8s
-
-Use `/var/snap/microk8s/common/var/lib/kubelet/`
-
-### Other Kubelet installation
-
-Use `/var/lib/kubelet/`
+See the [installation guide](docs/install.md) for requirements, credentials,
+MicroK8s configuration, StorageClasses, component toggles, installation tests,
+and uninstallation.
 
 
 ## Driver parameters
