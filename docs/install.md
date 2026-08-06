@@ -336,6 +336,62 @@ volumeBindingMode: Immediate
 allowVolumeExpansion: false
 ```
 
+### 5. Test the installation
+
+The optional Helm test provisions a real volume through an existing
+StorageClass, mounts it in a pod, then writes and reads a file. The test does
+not create a StorageClass: `tests.storageClassName` must refer to one that
+already exists and uses this CSI driver.
+
+If you created one of the StorageClasses above, use its name and skip the
+creation step below. If no suitable StorageClass exists, create one for the
+test. For example, the following StorageClass is pinned to a Xen Orchestra
+pool; replace `<xo-pool-uuid>` with the UUID of a pool accessible from the
+Kubernetes nodes:
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xo-sc-explicit-pool
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+parameters:
+  poolId: "<xo-pool-uuid>"
+EOF
+
+kubectl get storageclass xo-sc-explicit-pool
+```
+
+Enable and run the test. Replace `xo-sc-explicit-pool` with the name of your
+existing StorageClass if you did not create the example above:
+
+```bash
+# Replace your storageClassName if you already have one
+helm upgrade xenorchestra-csi-driver \
+  --namespace kube-system \
+  --reuse-values \
+  --set tests.enabled=true \
+  --set tests.storageClassName=xo-sc-explicit-pool \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
+
+helm test xenorchestra-csi-driver --namespace kube-system --logs
+```
+
+The test uses a generic ephemeral PVC and creates a real VDI. On success, Helm
+removes the pod and Kubernetes removes the PVC. The StorageClass reclaim policy
+should be `Delete` so the test VDI is removed as well.
+
+Failed test pods are retained for diagnosis. Delete one before rerunning the
+test:
+
+```bash
+kubectl delete pod xenorchestra-csi-driver-test --namespace kube-system
+```
+
 ---
 
 ## Dynamic volume provisioning
