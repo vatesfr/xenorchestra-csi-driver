@@ -141,6 +141,9 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		cfg.TestVolumeParameters = map[string]string{
 			xenorchestracsi.ParameterPoolID: stub.PoolId,
 		}
+		cfg.TestVolumeMutableParameters = map[string]string{
+			xenorchestracsi.ParameterStorageRepository: stub.DefaultSRId,
+		}
 
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
@@ -151,6 +154,9 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		cfg := buildBaseTestConfig()
 		cfg.TestVolumeParameters = map[string]string{
 			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeShared,
+		}
+		cfg.TestVolumeMutableParameters = map[string]string{
+			xenorchestracsi.ParameterStorageRepository: stub.DefaultSRId,
 		}
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
@@ -163,6 +169,9 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 			// "poolId":      stub.PoolId,
 			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeLocal,
 		}
+		cfg.TestVolumeMutableParameters = map[string]string{
+			xenorchestracsi.ParameterStorageRepository: stub.LocalSRId,
+		}
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
 	})
@@ -173,6 +182,9 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		cfg.TestVolumeParameters = map[string]string{
 			xenorchestracsi.ParameterPoolID:      stub.PoolId,
 			xenorchestracsi.ParameterStorageType: xenorchestracsi.StorageTypeLocal,
+		}
+		cfg.TestVolumeMutableParameters = map[string]string{
+			xenorchestracsi.ParameterStorageRepository: stub.LocalSRId,
 		}
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()

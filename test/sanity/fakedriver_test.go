@@ -231,6 +231,17 @@ func newMockSR(ctrl *gomock.Controller) *xoLibMock.MockSR {
 				ID:        id,
 				NameLabel: "fake-sr",
 				Type:      "nfs",
+				Pool:      uuid.FromStringOrNil(stub.PoolId),
+				Shared:    true,
+			}, nil
+		}
+		if id == uuid.FromStringOrNil(stub.LocalSRId) {
+			return &payloads.StorageRepository{
+				ID:        id,
+				NameLabel: "fake-local-sr",
+				Type:      "ext",
+				Pool:      uuid.FromStringOrNil(stub.PoolId),
+				Shared:    false,
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such SR %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"SR\"\n  }\n}", id, id)

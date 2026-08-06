@@ -90,6 +90,22 @@ func (driver *xenorchestraCSIDriver) ControllerGetVolume(context.Context, *csi.C
 	return nil, status.Error(codes.Unimplemented, "ControllerGetVolume is not implemented")
 }
 
+func validateMutableParameters(parameters map[string]string, required bool) (string, error) {
+	for key := range parameters {
+		if key != ParameterStorageRepository {
+			return "", status.Errorf(codes.InvalidArgument, "unsupported mutable parameter %q", key)
+		}
+	}
+
+	targetSR := parameters[ParameterStorageRepository]
+	if required && targetSR == "" {
+		return "", status.Errorf(codes.InvalidArgument,
+			"mutable parameter %q is required for migration", ParameterStorageRepository)
+	}
+
+	return targetSR, nil
+}
+
 // ControllerModifyVolume implements Driver.
 // It allows migrating a VDI to a different Storage Repository (SR) within the
 // same pool, triggered by the external-resizer when a VolumeAttributesClass is
@@ -102,19 +118,6 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context,
 		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
 	}
 
-	targetSRStr := req.GetMutableParameters()[ParameterStorageRepository]
-	if targetSRStr == "" {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"mutable parameter %q is required for migration", ParameterStorageRepository)
-	}
-
-	targetSRUUID, err := uuid.FromString(targetSRStr)
-	if err != nil || targetSRUUID == uuid.Nil {
-		klog.ErrorS(err, "invalid SR UUID", "srID", targetSRStr)
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid SR UUID %q: must be a valid UUID", targetSRStr)
-	}
-
 	// Look up the existing VDI.
 	vdi, err := driver.xoClient.GetVDIByVolumeId(ctx, volumeID)
 	if err != nil {
@@ -123,6 +126,18 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context,
 			return nil, status.Errorf(codes.NotFound, "volume %s not found: %v", volumeID, err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeID, err)
+	}
+
+	targetSRStr, err := validateMutableParameters(req.GetMutableParameters(), true)
+	if err != nil {
+		return nil, err
+	}
+
+	targetSRUUID, err := uuid.FromString(targetSRStr)
+	if err != nil || targetSRUUID == uuid.Nil {
+		klog.ErrorS(err, "invalid SR UUID", "srID", targetSRStr)
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid SR UUID %q: must be a valid UUID", targetSRStr)
 	}
 
 	// No-op if the VDI is already on the target SR.
@@ -383,6 +398,10 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 
 	if req.VolumeContentSource != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "volume content source is not supported")
+	}
+
+	if _, err := validateMutableParameters(req.GetMutableParameters(), false); err != nil {
+		return nil, err
 	}
 
 	capabilities := req.GetVolumeCapabilities()
