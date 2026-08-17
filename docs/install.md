@@ -168,6 +168,33 @@ helm upgrade --install xenorchestra-csi-driver \
 Credentials may instead be passed inline under `config` (the chart creates a
 Secret), or through `driver.envFrom`.
 
+#### Component toggles
+
+The controller, node plugin, and `CSIDriver` resource can be managed
+independently:
+
+| Value | Default | Resource |
+| ----- | ------- | -------- |
+| `controller.enabled` | `true` | Controller Deployment |
+| `node.enabled` | `true` | Node DaemonSet |
+| `csidriver.enabled` | `true` | `CSIDriver` resource |
+
+Disabling a component also skips its ServiceAccount and RBAC rules. For
+example, to install only the controller:
+
+```bash
+helm upgrade --install xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set controller.enabled=true \
+  --set node.enabled=false \
+  --set existingConfigSecret=xenorchestra-cloud-controller-manager \
+  oci://ghcr.io/vatesfr/charts/xenorchestra-csi-driver
+```
+
+For a node-only installation, invert `controller.enabled` and `node.enabled`.
+If the `CSIDriver` object is managed elsewhere, set
+`csidriver.enabled=false`.
+
 ### Verify
 
 Verify that the pods are running:

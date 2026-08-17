@@ -22,6 +22,9 @@ serviceAccount:
 rbac:
   create: true
 
+csidriver:
+  enabled: true
+
 driver:
   name: csi.xenorchestra.vates.tech
   logVerbosityLevel: 2
@@ -34,6 +37,7 @@ driver:
   envFrom: []
 
 controller:
+  enabled: true
   replicas: 1
   priorityClassName: system-cluster-critical
   hostNetwork: false
@@ -60,6 +64,7 @@ controller:
       memory: 500Mi
 
 node:
+  enabled: true
   priorityClassName: system-node-critical
   hostNetwork: false
   dnsPolicy: ClusterFirstWithHostNet

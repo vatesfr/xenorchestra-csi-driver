@@ -32,6 +32,18 @@ app.kubernetes.io/part-of: xenorchestra-csi-driver
 {{- default (include "xenorchestra-csi-driver.fullname" .) .Values.existingConfigSecret }}
 {{- end }}
 
+{{- define "xenorchestra-csi-driver.configSecretCreated" -}}
+{{- if and .Values.config (not .Values.existingConfigSecret) (or .Values.controller.enabled .Values.node.enabled) }}
+true
+{{- end }}
+{{- end }}
+
+{{- define "xenorchestra-csi-driver.configAvailable" -}}
+{{- if or .Values.existingConfigSecret (include "xenorchestra-csi-driver.configSecretCreated" .) }}
+true
+{{- end }}
+{{- end }}
+
 {{- define "xenorchestra-csi-driver.image" -}}
 {{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
 {{- end }}

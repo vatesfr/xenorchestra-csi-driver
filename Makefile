@@ -108,22 +108,46 @@ mock: ## Generate mocks
 ############
 
 .PHONY: helm-unit
-helm-unit: ## Helm Unit Tests
-	@helm lint charts/xenorchestra-csi-driver
+helm-unit: ## Lint and render the Helm chart
+	# Lint the chart
+	helm lint charts/xenorchestra-csi-driver
+	# Render the chart with the CI values (inline config)
 	@helm template --namespace kube-system \
 		-f charts/xenorchestra-csi-driver/ci/values.yaml \
 		xenorchestra-csi-driver charts/xenorchestra-csi-driver >/dev/null
+	# Render the Helm test pod when tests.enabled=true
 	helm template --namespace kube-system \
 		--set tests.enabled=true \
 		--set tests.storageClassName=xo-test \
 		--set tests.image=null \
 		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
 		grep -q 'helm.sh/hook: test'
+	# Fall back to the default service accounts when serviceAccount.create=false
 	test "$$(helm template --namespace kube-system \
 		--set serviceAccount.create=false \
 		--set rbac.create=false \
 		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
 		grep -c 'serviceAccountName: default')" -eq 2
+	# Skip the controller Deployment and the CSIDriver when disabled
+	test "$$(helm template --namespace kube-system \
+		--set controller.enabled=false \
+		--set csidriver.enabled=false \
+		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
+		grep -cE 'kind: (Deployment|CSIDriver)')" -eq 0
+	# Skip the node DaemonSet when disabled
+	test "$$(helm template --namespace kube-system \
+		--set node.enabled=false \
+		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
+		grep -cE 'kind: DaemonSet')" -eq 0
+	# Skip the ServiceAccount and RBAC of the disabled component
+	test "$$(helm template --namespace kube-system \
+		--set node.enabled=false \
+		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
+		grep -c 'name: xenorchestra-csi-driver-node')" -eq 0
+	test "$$(helm template --namespace kube-system \
+		--set controller.enabled=false \
+		xenorchestra-csi-driver charts/xenorchestra-csi-driver | \
+		grep -c 'name: xenorchestra-csi-driver-controller')" -eq 0
 
 .PHONY: helm-login
 helm-login: ## Helm Login
