@@ -1,3 +1,4 @@
+{{- if .Values.node.enabled }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -23,7 +24,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: node
       annotations:
-        {{- if and .Values.config (not .Values.existingConfigSecret) }}
+        {{- if include "xenorchestra-csi-driver.configSecretCreated" . }}
         checksum/config: {{ toJson .Values.config | sha256sum }}
         {{- end }}
         {{- with .Values.node.podAnnotations }}
@@ -81,7 +82,7 @@ spec:
             - --v={{ .Values.driver.logVerbosityLevel }}
             - --endpoint=unix:///csi/csi.sock
             - --node-name=$(KUBE_NODE_NAME)
-            {{- if or .Values.config .Values.existingConfigSecret }}
+            {{- if include "xenorchestra-csi-driver.configAvailable" . }}
             - --config-file=/etc/xenorchestra/config.yaml
             {{- end }}
             - --xo-client-timeout={{ .Values.driver.xoClientTimeout }}
@@ -124,7 +125,7 @@ spec:
               mountPropagation: Bidirectional
             - name: device-dir
               mountPath: /dev
-            {{- if or .Values.config .Values.existingConfigSecret }}
+            {{- if include "xenorchestra-csi-driver.configAvailable" . }}
             - name: xo-cloud-config
               mountPath: /etc/xenorchestra
               readOnly: true
@@ -160,7 +161,7 @@ spec:
           hostPath:
             path: /dev
             type: Directory
-        {{- if or .Values.config .Values.existingConfigSecret }}
+        {{- if include "xenorchestra-csi-driver.configAvailable" . }}
         - name: xo-cloud-config
           secret:
             secretName: {{ include "xenorchestra-csi-driver.configSecretName" . }}
@@ -169,3 +170,4 @@ spec:
                 path: config.yaml
             defaultMode: 416
         {{- end }}
+{{- end }}
