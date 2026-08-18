@@ -458,4 +458,5 @@ These flags are passed as container arguments in the controller/node deployment 
 | `--config-file` | Path to the XO credentials config file mounted in the pod | `/etc/xenorchestra/config.yaml` |
 | `--vdi-name-prefix` | Prefix prepended to the Kubernetes volume name when labelling VDIs in XO | `csi-` |
 | `--cluster-tag` | Tag added to every VDI at creation; `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. | `k8s-managed` |
+| `--xo-client-timeout` | HTTP timeout for XenOrchestra API requests. Defaults to `30s`, increase for large pools or slow connections. | `30s` |
 | `--node-metadata-source` | How the node plugin resolves the pool ID and VM identity: `kubernetes` (reads `spec.providerID`, requires CCM) or `xo-api` (queries XO directly) | `kubernetes` |

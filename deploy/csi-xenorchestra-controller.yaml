@@ -72,6 +72,7 @@ spec:
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
             - "--cluster-tag=k8s-managed"
+            - "--vdi-name-prefix=csi-"
           env:
             - name: KUBE_NODE_NAME
               valueFrom:

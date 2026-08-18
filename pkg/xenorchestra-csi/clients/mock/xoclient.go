@@ -252,6 +252,20 @@ func (mr *MockXoClientMockRecorder) MigrateVDIAndWait(ctx, vdi, targetSRID any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MigrateVDIAndWait", reflect.TypeOf((*MockXoClient)(nil).MigrateVDIAndWait), ctx, vdi, targetSRID)
 }
 
+// Network mocks base method.
+func (m *MockXoClient) Network() library.Network {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Network")
+	ret0, _ := ret[0].(library.Network)
+	return ret0
+}
+
+// Network indicates an expected call of Network.
+func (mr *MockXoClientMockRecorder) Network() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Network", reflect.TypeOf((*MockXoClient)(nil).Network))
+}
+
 // PBD mocks base method.
 func (m *MockXoClient) PBD() library.PBD {
 	m.ctrl.T.Helper()

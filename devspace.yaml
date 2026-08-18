@@ -93,13 +93,12 @@ dev:
       app: csi-xenorchestra-controller
     namespace: kube-system
     container: xenorchestra-csi-driver
-    devImage: golang:1.26.1-trixie
+    devImage: golang:1.26.5-trixie
     workingDir: /app
     sync:
       # - path: ./bin/:/app/bin
       - path: ./:/app
         uploadExcludeFile: .dockerignore
-      - path: ../xo-sdk-go/:/app/xo-sdk-go
     terminal:
       command: ./devspace_start.sh
     ssh:

@@ -102,6 +102,10 @@ func NewDriver(options *DriverOptions) Driver {
 			klog.Fatalf("Failed to load config from environment variables: %v. Please ensure either a valid config file is mounted or the required environment variables (XOA_URL and XOA_TOKEN) are set", err)
 		}
 	}
+
+	// Override the client timeout with the driver flag (always set a default).
+	xoConfig.ClientTimeout = options.XoClientTimeout
+
 	xoSDKClient, err := xok8s.NewXOClient(&xoConfig)
 	if err != nil {
 		klog.Fatalf("failed to create Xen Orchestra client: %v", err)

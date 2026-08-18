@@ -1,6 +1,6 @@
 module github.com/vatesfr/xenorchestra-csi-driver
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/container-storage-interface/spec v1.12.0
@@ -11,8 +11,8 @@ require (
 	github.com/onsi/gomega v1.41.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vatesfr/xenorchestra-go-sdk v1.15.1
-	github.com/vatesfr/xenorchestra-k8s-common v0.2.0
+	github.com/vatesfr/xenorchestra-go-sdk v1.18.0
+	github.com/vatesfr/xenorchestra-k8s-common v0.3.0
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.81.1
 	k8s.io/apimachinery v0.36.1
@@ -52,7 +52,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
+	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.35.0 // indirect
