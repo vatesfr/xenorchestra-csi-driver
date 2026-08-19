@@ -24,6 +24,8 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 - Static volume provisioning (use an existing VDI by UUID).
 - Dynamic volume provisioning (automatically create a VDI from a StorageClass).
 - Local storage support: pin VDIs to a host-local SR with automatic migration on reschedule.
+- Volume migration via `VolumeAttributesClass`: create a VDI directly in a specific Storage Repository (SR),
+  or migrate it after creation within the same pool.
 
 ## Prerequisite
 
@@ -125,15 +127,39 @@ Name | Meaning | Example | Required | Default
 
 ### Dynamic provisioning
 
-The driver creates a new VDI in a pool's **default SR** each time a PVC is bound.
-Two modes are supported:
+The driver creates a new VDI each time a PVC is bound. Three selection modes are supported,
+in order of precedence: **VAC SR > explicit poolId > topology-aware**.
 > [Get an example](./examples/csi-sc-dynamic.yaml)
+
+#### VAC SR selection (highest precedence, Kubernetes ≥ 1.31)
+
+Set `storageRepositoryId` in a `VolumeAttributesClass`. The driver creates the VDI
+directly in the specified SR. The SR is validated: it must exist, and belong to the
+pool selected by `poolId` or topology. If `storageType` is set in the StorageClass,
+the SR's shared/local type must match.
+
+When using VAC SR selection, the `storageType: local` automatic local-SR override is
+**not** applied — the VDI lands exactly where the VAC points.
+
+```yaml
+apiVersion: storage.k8s.io/v1beta1
+kind: VolumeAttributesClass
+metadata:
+  name: csi-xo-specific-sr
+driver: csi.xenorchestra.vates.tech
+parameters:
+  storageRepositoryId: "<sr-uuid>"
+```
+
+Name | Meaning | Example | Required
+--- | --- | --- | ---
+`storageRepositoryId` | UUID of the target Storage Repository. The VDI is created directly in this SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | Yes
 
 #### Explicit pool (simple)
 
-Set `poolId` in `StorageClass.parameters`. The driver always provisions into that pool.
-The `poolId` is validated against the pod's topology requirements at provision time —
-an error is returned if they are incompatible.
+Set `poolId` in `StorageClass.parameters`. The driver always provisions into that pool's
+default SR. The `poolId` is validated against the pod's topology requirements at
+provision time — an error is returned if they are incompatible.
 
 Name | Meaning | Example | Required | Default
 --- | --- | --- | --- | ---

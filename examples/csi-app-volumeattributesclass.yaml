@@ -1,0 +1,81 @@
+# ============================================================================
+# Full example: VolumeAttributesClass — migrate a VDI to a different SR
+# ============================================================================
+# This example demonstrates using a VolumeAttributesClass to change the
+# Storage Repository (SR) of an existing volume at runtime.
+#
+# Prerequisites:
+#   1. xenorchestra-csi-driver is deployed (with the csi-resizer sidecar).
+#   2. The xenorchestra-k8s StorageClass exists.
+#   3. You have at least two SRs in the same XO pool.
+#
+# Usage:
+#   1. Replace <target-sr-uuid> with the SR UUID you want to migrate to.
+#   2. kubectl apply -f examples/csi-app-volumeattributesclass.yaml
+#   3. Watch the pod come up and the volume be provisioned on the initial SR.
+#   4. To migrate: annotate the PVC with the VolumeAttributesClass name:
+#        kubectl annotate pvc example-vac-pvc \
+#          volumeattributesclass.storage.k8s.io=migrate-to-fast-sr
+#   5. The csi-resizer sidecar detects the annotation and calls
+#      ControllerModifyVolume. The VDI migrates once the pod is stopped.
+# ============================================================================
+
+---
+# 1. StorageClass — dynamic provisioning on the default Xen Orchestra SR
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: xenorchestra-k8s
+provisioner: csi.xenorchestra.vates.tech
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: false
+
+---
+# 2. VolumeAttributesClass — target SR for migration
+apiVersion: storage.k8s.io/v1
+kind: VolumeAttributesClass
+metadata:
+  name: fast-sr
+driverName: csi.xenorchestra.vates.tech
+parameters:
+  # Replace with the UUID of the target Storage Repository (SR).
+  # The target SR must be in the same Xen Orchestra pool as the current VDI.
+  storageRepositoryId: "<target-sr-uuid>"
+
+---
+# 3. PersistentVolumeClaim — provisioned on the StorageClass default SR
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: example-vac-pvc
+spec:
+  storageClassName: xenorchestra-k8s
+  volumeAttributesClassName: fast-sr
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+# 4. Pod — consumes the PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-vac-app
+spec:
+  containers:
+    - name: app
+      image: busybox
+      command:
+        - sh
+        - -c
+        - "while true; do date > /data/date.txt; sleep 10; done"
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: example-vac-pvc

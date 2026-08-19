@@ -27,7 +27,7 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
         # Uncomment the following line to deploy specifically on worker-1 node
-        kubernetes.io/hostname: worker-1
+        # kubernetes.io/hostname: worker-1
       priorityClassName: system-node-critical
       tolerations:
         - operator: "Exists"
