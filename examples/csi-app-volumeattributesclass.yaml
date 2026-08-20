@@ -17,7 +17,7 @@
 #        kubectl annotate pvc example-vac-pvc \
 #          volumeattributesclass.storage.k8s.io=migrate-to-fast-sr
 #   5. The csi-resizer sidecar detects the annotation and calls
-#      ControllerModifyVolume. The VDI migrates once the pod is stopped.
+#      ControllerModifyVolume.
 # ============================================================================
 
 ---
