@@ -142,6 +142,20 @@ Local SRs bypass network storage latency. They are well-suited for
 latency-sensitive workloads (databases, caches) that do not require shared access
 or cross-node mobility.
 
+### VAC SR selection bypasses local storage override
+
+When a `VolumeAttributesClass` with `storageRepositoryId` is provided, the VDI is
+created directly in the specified SR — the `storageType: local` automatic local-SR
+override in `CreateVolume` is **not** applied. The VDI lands exactly where the VAC
+points. If `storageType` is set in the StorageClass, the SR's `shared` flag must
+match (`storageType: local` → `Shared == false`, `storageType: shared` →
+`Shared == true`).
+
+> **Note:** The `storageType: local` migration-at-attach behavior in
+> `ControllerPublishVolume` still applies — if the VDI lands on a shared SR but the
+> StorageClass requests `storageType: local`, the driver will migrate it to the
+> target host's local SR at attach time.
+
 ### Limitations
 
 - A VDI on a local SR **cannot** be attached to a VM on a different host. If the

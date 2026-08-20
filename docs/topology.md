@@ -153,8 +153,18 @@ This is the correct separation of concerns:
 
 ## Pool selection in CreateVolume
 
-The driver supports two StorageClass configurations that affect how these hints
-are used:
+Provisioning follows this precedence order: a VAC SR if provided, otherwise an
+explicit `poolId` if provided, otherwise topology-aware selection. The VAC does
+not bypass pool selection entirely: the driver still validates that the requested
+SR belongs to the resolved pool.
+
+### VAC SR selection (highest precedence)
+
+When a `VolumeAttributesClass` with `storageRepositoryId` is attached to a PVC,
+the driver creates the VDI directly in the specified SR at provision time.
+Pool selection still applies (via `poolId` or topology-aware mode) to validate
+that the SR belongs to the correct pool. See [Installation Guide](install.md)
+for usage details.
 
 ### Explicit `poolId` (simple mode)
 
@@ -170,7 +180,9 @@ the StorageClass and the pod's node affinity are incompatible and the volume
 would never be schedulable.
 
 After validation the driver checks that the pool's default SR is reachable (not
-in maintenance mode) before creating the VDI.
+in maintenance mode) before creating the VDI. When `storageType: local` is
+requested, the driver later switches to one of the pool's local SRs for the
+initial placement.
 
 ### Topology-aware mode (no `poolId`)
 
@@ -199,9 +211,10 @@ node plugin's `NodeGetInfo` call.
 
 ### Summary
 
-| StorageClass `poolId` | `accessibility_requirements` present | Behaviour |
-| --------------------- | ------------------------------------ | --------- |
-| Set | No | Provision into `poolId`, verify SR accessible |
-| Set | Yes | Validate `poolId` ∈ requisite topologies, then verify SR accessible |
-| Absent | Yes | Select first viable pool from preferred → requisite order |
-| Absent | No | `InvalidArgument` — not enough information to pick a pool |
+| VAC `storageRepositoryId` | SC `poolId` | `accessibility_requirements` | Behaviour |
+| ------------------------- | ----------- | ---------------------------- | --------- |
+| Set | Any | Any | Create VDI in VAC SR; validate SR is in the correct pool |
+| Absent | Set | No | Provision into `poolId` default SR, verify SR accessible |
+| Absent | Set | Yes | Validate `poolId` ∈ requisite topologies, then verify SR accessible |
+| Absent | Absent | Yes | Select first viable pool from preferred → requisite order |
+| Absent | Absent | No | `InvalidArgument` — not enough information to pick a pool |

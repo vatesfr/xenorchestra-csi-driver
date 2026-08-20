@@ -17,6 +17,10 @@ import (
 	xoLibMock "github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library/mock"
 )
 
+const (
+	fakeLocalSRName = "fake-local-sr"
+)
+
 // vdiStore is a package-level in-memory store used by mockVDI to simulate
 // a VDI database during sanity tests without a real Xen Orchestra connection.
 var vdiStore = struct {
@@ -119,34 +123,30 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockXoClient.EXPECT().FindLocalSRForHost(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
 		localSR := payloads.StorageRepository{
-			ID:          uuid.FromStringOrNil(stub.LocalSRId),
-			NameLabel:   "fake-local-sr",
-			Type:        "ext",
-			Container:   hostID,
-			Pool:        uuid.FromStringOrNil(stub.PoolId),
-			ContentType: "user",
+			ID:        uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel: fakeLocalSRName,
+			Container: hostID,
+			Pool:      uuid.FromStringOrNil(stub.PoolId),
 		}
 		return &localSR, nil
 	}).AnyTimes()
 	mockXoClient.EXPECT().FindLocalSRsForPool(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, poolID uuid.UUID) ([]*payloads.StorageRepository, error) {
 		localSR := payloads.StorageRepository{
-			ID:          uuid.FromStringOrNil(stub.LocalSRId),
-			NameLabel:   "fake-local-sr",
-			Type:        "ext",
-			Pool:        poolID,
-			ContentType: "user",
+			ID:        uuid.FromStringOrNil(stub.LocalSRId),
+			NameLabel: fakeLocalSRName,
+			Pool:      poolID,
 		}
 		return []*payloads.StorageRepository{&localSR}, nil
 	}).AnyTimes()
-	mockXoClient.EXPECT().MigrateVDIAndWait(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, vdiID uuid.UUID, targetSRID uuid.UUID) (uuid.UUID, error) {
+	mockXoClient.EXPECT().MigrateVDIAndWait(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
 		newVDI := uuid.Must(uuid.NewV4())
 		vdiStore.Lock()
 		defer vdiStore.Unlock()
-		if vdi, exists := vdiStore.byID[vdiID]; exists {
-			vdi.ID = newVDI
-			vdi.SR = targetSRID
-			delete(vdiStore.byID, vdiID)
-			vdiStore.byID[newVDI] = vdi
+		if existingVDI, exists := vdiStore.byID[vdi.ID]; exists {
+			existingVDI.ID = newVDI
+			existingVDI.SR = targetSRID
+			delete(vdiStore.byID, vdi.ID)
+			vdiStore.byID[newVDI] = existingVDI
 		}
 		return newVDI, nil
 	}).AnyTimes()
@@ -230,7 +230,15 @@ func newMockSR(ctrl *gomock.Controller) *xoLibMock.MockSR {
 			return &payloads.StorageRepository{
 				ID:        id,
 				NameLabel: "fake-sr",
-				Type:      "nfs",
+				Pool:      uuid.FromStringOrNil(stub.PoolId),
+				Shared:    true,
+			}, nil
+		} else if id == uuid.FromStringOrNil(stub.LocalSRId) {
+			return &payloads.StorageRepository{
+				ID:        id,
+				NameLabel: fakeLocalSRName,
+				Pool:      uuid.FromStringOrNil(stub.PoolId),
+				Shared:    false,
 			}, nil
 		}
 		return nil, fmt.Errorf("API error: 404 Not Found - {\n  \"error\": \"no such SR %s\",\n  \"data\": {\n    \"id\": \"%s\",\n    \"type\": \"SR\"\n  }\n}", id, id)

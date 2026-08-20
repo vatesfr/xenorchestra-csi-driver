@@ -43,7 +43,6 @@ spec:
       imagePullSecrets:
         - name: regcred
       containers:
-        # TODO: Add resizer, snapshotter implementation when ready
         - name: liveness-probe
           image: registry.k8s.io/sig-storage/livenessprobe:v2.18.0
           args:
@@ -139,6 +138,23 @@ spec:
             httpGet:
               path: /metrics
               port: 29606
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-resizer
+          image: registry.k8s.io/sig-storage/csi-resizer:v2.2.1
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+          imagePullPolicy: "IfNotPresent"
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /metrics
+              port: 29607
             initialDelaySeconds: 10
             timeoutSeconds: 10
             periodSeconds: 20

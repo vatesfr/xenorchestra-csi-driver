@@ -185,14 +185,54 @@ Choose the provisioning mode that suits your use case.
 #### Dynamic provisioning (recommended)
 
 The driver creates a VDI automatically when a PVC is bound.
-Two modes are available depending on whether you want to pin provisioning to a
-specific pool or let the scheduler decide.
+Three modes are available, in order of precedence:
+**VAC SR > explicit poolId > topology-aware**.
+
+##### VAC SR selection (Kubernetes ≥ 1.31)
+
+Set `storageRepositoryId` in a `VolumeAttributesClass`. The driver creates the VDI
+directly in the specified SR at provision time — no post-creation migration needed.
+The SR is validated: it must exist and belong to the pool selected by `poolId` or
+topology. If `storageType` is set in the StorageClass, the SR's shared/local type
+must match.
+
+The `storageType: local` automatic local-SR override is **not** applied when a VAC
+SR is provided — the VDI lands exactly where the VAC points.
+
+```yaml
+# VolumeAttributesClass
+apiVersion: storage.k8s.io/v1beta1
+kind: VolumeAttributesClass
+metadata:
+  name: csi-xo-specific-sr
+driver: csi.xenorchestra.vates.tech
+parameters:
+  storageRepositoryId: "<sr-uuid>"   # UUID of the target SR
+```
+
+```yaml
+# PVC referencing the VAC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xo-csi-pvc-specific-sr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: csi-xenorchestra-sc-dynamic
+  volumeAttributesClassName: csi-xo-specific-sr
+```
 
 ##### Explicit pool
 
-Set `poolId` in the StorageClass parameters. The driver always provisions into
-that pool's default SR. The `poolId` is validated against the pod's topology
-requirements at provision time — an error is returned if they are incompatible.
+Set `poolId` in the StorageClass parameters. The driver uses that pool’s default
+SR by default. If `storageType: local` is requested, it later selects one of the
+pool’s local SRs for the initial placement. The `poolId` is validated against
+the pod's topology requirements at provision time — an error is returned if they
+are incompatible.
 
 ```bash
 kubectl apply -f examples/csi-sc-dynamic.yaml
@@ -302,10 +342,8 @@ allowVolumeExpansion: false
 ## Dynamic volume provisioning
 
 The driver creates a VDI in XenOrchestra when Kubernetes binds a PVC to a pod.
-The target SR is always the pool's **default SR**. The pool is either specified
-explicitly via `poolId` in the StorageClass, or selected automatically from the
-`accessibility_requirements` topology hints passed by the scheduler (see
-[Topology and Placement](topology.md) for the full selection logic).
+Provisioning follows this precedence order: a **SR from a VolumeAttributesClass** (VAC) if provided, otherwise an explicit **poolId from the StorageClass** if provided, otherwise a **topology-aware pool selection** based on the scheduler’s accessibility requirements.
+In the first case, the VDI is created directly in the requested SR. In the second case, the driver uses the pool’s default SR by default; if `storageType: local` is requested, it later switches to one of the pool’s local SRs for the initial placement. In the third case, the pool is selected automatically from the topology hints passed by the scheduler, as described in [Topology and Placement](topology.md).
 
 ### 1. Create the StorageClass
 
@@ -446,6 +484,12 @@ csi.xenorchestra.vates.tech
 | --------- | ----------- | -------- | ------- |
 | `poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. If omitted, the pool is selected automatically from `accessibility_requirements` (topology-aware mode). | No | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` |
 | `storageType` | Storage placement strategy. `shared` (default): VDI stays on the pool's shared default SR. `local`: VDI is migrated to the target host's local SR in `ControllerPublishVolume`. | No | `local` |
+
+### Dynamic provisioning – VolumeAttributesClass parameters
+
+| Parameter | Description | Required |
+| --------- | ----------- | -------- |
+| `storageRepositoryId` | UUID of the target Storage Repository. The VDI is created directly in this SR at provision time. The SR must belong to the pool selected by `poolId` or topology. If `storageType` is set in the StorageClass, the SR's shared/local type must match. | Yes |
 
 ### Driver startup flags
 
