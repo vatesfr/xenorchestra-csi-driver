@@ -49,9 +49,6 @@ func main() {
 	}
 
 	driver := xenorchestracsi.NewDriver(&driverOptions)
-	if driver == nil {
-		klog.Fatalln("Failed to initialize Xen Orchestra CSI Driver")
-	}
 	if err := driver.Run(context.Background()); err != nil {
 		klog.Fatalf("Failed to run Xen Orchestra CSI Driver: %v", err)
 	}
