@@ -102,17 +102,8 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context,
 		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
 	}
 
-	targetSRStr := req.GetMutableParameters()[ParameterStorageRepository]
-	if targetSRStr == "" {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"mutable parameter %q is required for migration", ParameterStorageRepository)
-	}
-
-	targetSRUUID, err := uuid.FromString(targetSRStr)
-	if err != nil || targetSRUUID == uuid.Nil {
-		klog.ErrorS(err, "invalid SR UUID", "srID", targetSRStr)
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid SR UUID %q: must be a valid UUID", targetSRStr)
+	if err := validateMutableParameters(req.GetMutableParameters()); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 
 	// Look up the existing VDI.
@@ -123,6 +114,24 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context,
 			return nil, status.Errorf(codes.NotFound, "volume %s not found: %v", volumeID, err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeID, err)
+	}
+
+	targetSRStr, hasTargetSR := req.GetMutableParameters()[ParameterStorageRepository]
+	if !hasTargetSR {
+		klog.V(5).InfoS("No target SR specified in mutable parameters, nothing to do", "volumeID", volumeID)
+		return &csi.ControllerModifyVolumeResponse{}, nil
+	}
+
+	if targetSRStr == "" {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"mutable parameter %q is required for migration", ParameterStorageRepository)
+	}
+
+	targetSRUUID, err := uuid.FromString(targetSRStr)
+	if err != nil || targetSRUUID == uuid.Nil {
+		klog.ErrorS(err, "invalid SR UUID", "srID", targetSRStr)
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid SR UUID %q: must be a valid UUID", targetSRStr)
 	}
 
 	// No-op if the VDI is already on the target SR.
@@ -378,6 +387,10 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		return nil, status.Errorf(codes.InvalidArgument, "invalid volume capabilities: %v", err)
 	}
 
+	if err := validateMutableParameters(req.GetMutableParameters()); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+
 	var capacityBytes int64
 	if req.GetCapacityRange() != nil {
 		capacityBytes = req.GetCapacityRange().GetRequiredBytes()
@@ -438,7 +451,9 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 //  1. An explicit target SR from the VolumeAttributesClass mutable parameters
 //     (CSI 1.10+, Kubernetes 1.31+): the SR must exist, be in the pool named by
 //     the poolId parameter when one is set, and match the requested
-//     storageType when one is explicitly set.
+//     storageType when one is explicitly set. Unknown mutable parameter keys
+//     are rejected before this function is reached (see
+//     validateMutableParameters).
 //  2. An explicit poolId StorageClass parameter: validated against the
 //     accessibility_requirements requisite topologies, then the pool and its
 //     SR are selected.

@@ -155,6 +155,9 @@ Name | Meaning | Example | Required
 --- | --- | --- | ---
 `storageRepositoryId` | UUID of the target Storage Repository. The VDI is created directly in this SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | Yes
 
+Any other parameter key in the `VolumeAttributesClass` is rejected with
+`InvalidArgument` — the driver only accepts the keys listed above.
+
 #### Explicit pool (simple)
 
 Set `poolId` in `StorageClass.parameters`. The driver always provisions into that pool's
