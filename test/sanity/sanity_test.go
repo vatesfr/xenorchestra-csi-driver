@@ -54,13 +54,12 @@ func TestSanity(t *testing.T) {
 	driver, _ := NewFakeDriver(
 		t,
 		&xenorchestracsi.DriverOptions{
-			DriverName:         driverName,
-			NodeName:           nodeName,
-			Endpoint:           sanityEndpoint,
-			KubernetesPoolTag:  xenorchestracsi.DefaultKubernetesPoolTag,
-			NodeMetadataSource: xenorchestracsi.NodeMetadataSourceKubernetes,
-			VDINamePrefix:      xenorchestracsi.DefaultVDINamePrefix,
-			ClusterTag:         xenorchestracsi.DefaultClusterTag,
+			DriverName:        driverName,
+			NodeName:          nodeName,
+			Endpoint:          sanityEndpoint,
+			KubernetesPoolTag: xenorchestracsi.DefaultKubernetesPoolTag,
+			VDINamePrefix:     xenorchestracsi.DefaultVDINamePrefix,
+			ClusterTag:        xenorchestracsi.DefaultClusterTag,
 		},
 		fakeMounter)
 
