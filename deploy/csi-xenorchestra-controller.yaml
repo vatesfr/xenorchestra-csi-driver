@@ -67,6 +67,7 @@ spec:
           imagePullPolicy: Always # TODO: Change to IfNotPresent for prod
           args:
             - "--v=5"
+            - "--mode=controller"
             - "--endpoint=unix:///csi/csi.sock"
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--config-file=/etc/xenorchestra/config.yaml"
@@ -149,6 +150,7 @@ spec:
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
+            - "--http-endpoint=:29607"
           imagePullPolicy: "IfNotPresent"
           livenessProbe:
             failureThreshold: 1

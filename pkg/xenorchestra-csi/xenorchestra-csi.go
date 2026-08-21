@@ -50,10 +50,14 @@ type xenorchestraCSIDriver struct {
 	nodeMetadata clients.NodeMetadataGetter
 	xoClient     clients.XoClient
 	mounter      clients.Mounter
+	mode         DriverMode
 }
 
-// NewDriverWithDependencies is the internal constructor shared by NewDriver and NewStubDriver.
+// NewDriverWithDependencies is the internal constructor shared by NewDriver and tests.
 func NewDriverWithDependencies(options *DriverOptions, nodeMetadata clients.NodeMetadataGetter, xoClient clients.XoClient, mounter clients.Mounter) Driver {
+	if options.Mode == "" {
+		options.Mode = DriverModeController
+	}
 	if options.DriverName == "" {
 		klog.Fatal("no driver name provided")
 	}
@@ -68,6 +72,7 @@ func NewDriverWithDependencies(options *DriverOptions, nodeMetadata clients.Node
 	klog.Infof("VDI name prefix: %q", options.VDINamePrefix)
 	klog.Infof("Cluster tag: %q", options.ClusterTag)
 	klog.Infof("Kubernetes pool tag: %q", options.KubernetesPoolTag)
+
 	return &xenorchestraCSIDriver{
 		Name:              options.DriverName,
 		Version:           driverVersion,
@@ -78,11 +83,11 @@ func NewDriverWithDependencies(options *DriverOptions, nodeMetadata clients.Node
 		nodeMetadata:      nodeMetadata,
 		xoClient:          xoClient,
 		mounter:           mounter,
+		mode:              options.Mode,
 	}
 }
 
-func NewDriver(options *DriverOptions) Driver {
-	// Configure Kubernetes client
+func newKubernetesClient() kube.Interface {
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
 		klog.Fatalf("failed to get in-cluster config: %v", err)
@@ -92,6 +97,10 @@ func NewDriver(options *DriverOptions) Driver {
 		klog.Fatalf("failed to create kubernetes client: %v", err)
 	}
 
+	return kclient
+}
+
+func newXoSDKClient(options *DriverOptions) *xok8s.XoClient {
 	// Try to load XO config from mounted file first, then fallback to env
 	xoConfig, err := LoadXOConfigFromFile(options.ConfigFile)
 	if err != nil {
@@ -111,30 +120,35 @@ func NewDriver(options *DriverOptions) Driver {
 		klog.Fatalf("failed to create Xen Orchestra client: %v", err)
 	}
 
-	// Select the NodeMetadata implementation based on the configured source.
-	var nodeMetadataGetter clients.NodeMetadataGetter
-	switch options.NodeMetadataSource {
-	case NodeMetadataSourceXoAPI:
-		klog.Info("Node metadata source: xo-api (CCM not required)")
-		nodeMetadataGetter = clients.NewNodeMetadataFromXoClient(kclient, xoSDKClient, options.NodeName)
-	default:
-		if options.NodeMetadataSource != NodeMetadataSourceKubernetes {
-			klog.Fatalf("Unknown node-metadata-source %q", options.NodeMetadataSource)
-		}
-		klog.Info("Node metadata source: kubernetes (requires the XenOrchestra CCM)")
-		nodeMetadataGetter = clients.NewNodeMetadataFromKubernetes(kclient, options.NodeName)
+	return xoSDKClient
+}
+
+func NewDriver(options *DriverOptions) Driver {
+	kclient := newKubernetesClient()
+
+	var xoClient clients.XoClient
+	if options.Mode == DriverModeController {
+		xoSDKClient := newXoSDKClient(options)
+		xoClient = clients.NewXoClient(xoSDKClient.Client)
 	}
 
-	return NewDriverWithDependencies(options, nodeMetadataGetter, clients.NewXoClient(xoSDKClient.Client), clients.NewSafeMounter())
+	klog.Info("Node metadata source: kubernetes (requires the XenOrchestra CCM)")
+	nodeMetadataGetter := clients.NewNodeMetadataFromKubernetes(kclient, options.NodeName)
+
+	return NewDriverWithDependencies(options, nodeMetadataGetter, xoClient, clients.NewSafeMounter())
 }
 
 // Run implements Driver.
 func (driver *xenorchestraCSIDriver) Run(ctx context.Context) error {
-	// controllerServer := driver.GetController()
+	_ = ctx
 
-	// Start the nonblocking GRPC
 	grpc := NewNonBlockingGRPCServer()
-	grpc.Start(driver.endpoint, driver, driver, driver)
+	switch driver.mode {
+	case DriverModeNode:
+		grpc.Start(driver.endpoint, driver, nil, driver)
+	default:
+		grpc.Start(driver.endpoint, driver, driver, driver)
+	}
 
 	return nil
 }

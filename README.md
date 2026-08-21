@@ -4,12 +4,10 @@ A Container Storage Interface (CSI) driver that provides persistent storage for 
 
 This repository hosts the CSI driver and all of its build and dependent configuration files to deploy the driver.
 
-The Xen Orchestra CCM is **required** when using the default
-`--node-metadata-source=kubernetes` mode. Without it, `spec.providerID` is not set
+The Xen Orchestra CCM is **required**. Without it, `spec.providerID` is not set
 on Node objects, `NodeGetInfo` fails, and the node-driver-registrar enters
 **CrashLoopBackOff** — the CSI node plugin never registers with kubelet and no
-volume operations are possible on that node. Use `--node-metadata-source=xo-api` if
-you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
+volume operations are possible on that node (see [Topology and Placement](docs/topology.md)).
 
 * csi plugin name: `csi.xenorchestra.vates.tech`
 * supported accessModes: `ReadWriteOnce`
@@ -31,7 +29,7 @@ you cannot run the CCM (see [Topology and Placement](docs/topology.md)).
 
 * XenOrchestra version **6.4+**
 * XCP-ng version 8.3+
-* Network connectivity between Kubernetes nodes and XO API
+* Network connectivity between the CSI controller pod and the XO API
 
 ## Documentation
 
@@ -79,7 +77,7 @@ for full details and manual recovery steps.
 An example of an install with kubectl can be found in the './deploy' folder. You may need to adjust this file to fit your actual installation; see below for more information.
 
 ### Prerequisites
-* The driver depends on the CCM credentials config secret ([See here](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md#deploy-ccm)).
+* The controller deployment depends on the CCM credentials config secret ([See here](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md#deploy-ccm)).
 
 ### Quick Start with the PoC
 

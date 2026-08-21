@@ -16,7 +16,7 @@ This guide walks you through installing the XenOrchestra CSI driver on a Kuberne
 | Xen Orchestra | 5.110.1+ |
 | Kubernetes | 1.26+ |
 
-Network connectivity is required between every Kubernetes node and the Xen Orchestra API endpoint.
+Network connectivity is required between the CSI controller pod and the Xen Orchestra API endpoint.
 
 ### Kubernetes tooling
 
@@ -25,8 +25,7 @@ Network connectivity is required between every Kubernetes node and the Xen Orche
 
 ### XenOrchestra Cloud Controller Manager (CCM)
 
-The CCM is **required** when using the CSI driver with the default
-`--node-metadata-source=kubernetes` mode. The CCM sets `spec.providerID` on each
+The CCM is **required** for the CSI node plugin. The CCM sets `spec.providerID` on each
 Kubernetes Node object. The CSI node plugin reads this field at startup to resolve
 the pool ID and VM UUID, then returns them from `NodeGetInfo` so that kubelet can
 register the driver and write the `topology.k8s.xenorchestra/pool_id` label.
@@ -37,13 +36,9 @@ The CSI node plugin is never registered with kubelet on that node: no volume can
 staged, published, or unpublished. The `topology.k8s.xenorchestra/pool_id` label is
 never written to the Node object.
 
-If you cannot run the CCM, use `--node-metadata-source=xo-api` instead — the driver
-will resolve the pool ID directly from the XenOrchestra API without depending on
-`spec.providerID`.
-
-The CSI driver reuses the same credentials secret as the CCM. If the CCM is already
+The CSI controller reuses the same credentials secret as the CCM. If the CCM is already
 installed you can skip the [credentials step](#2-create-the-credentials-secret)
-below.
+below. The node plugin does not mount or read this secret.
 
 See the [CCM install guide](https://github.com/vatesfr/xenorchestra-cloud-controller-manager/blob/main/docs/install.md)
 for setup instructions, and [docs/topology.md](topology.md) for a detailed
@@ -68,7 +63,7 @@ kubectl -n kube-system create secret docker-registry regcred \
 
 ### 2. Create the credentials secret
 
-The driver authenticates to Xen Orchestra using a YAML config file stored as a Kubernetes secret.
+The controller authenticates to Xen Orchestra using a YAML config file stored as a Kubernetes secret.
 
 Create a file named `xo-config.yaml`:
 
@@ -495,12 +490,16 @@ csi.xenorchestra.vates.tech
 
 These flags are passed as container arguments in the controller/node deployment manifests.
 
+The driver supports two deployment modes:
+- `--mode=controller`: the controller deployment. It exposes Identity, Controller, and Node services.
+- `--mode=node`: the node deployment. It exposes Identity and Node services only, and does not load XO credentials.
+
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
+| `--mode` | Driver service mode: `controller` or `node` | `controller` |
 | `--driver-name` | CSI driver name registered with Kubernetes | `csi.xenorchestra.vates.tech` |
 | `--endpoint` | CSI gRPC endpoint | `unix://tmp/csi.sock` |
-| `--config-file` | Path to the XO credentials config file mounted in the pod | `/etc/xenorchestra/config.yaml` |
+| `--config-file` | Path to the XO credentials config file mounted in the controller pod | `/etc/xenorchestra/config.yaml` |
 | `--vdi-name-prefix` | Prefix prepended to the Kubernetes volume name when labelling VDIs in XO | `csi-` |
 | `--cluster-tag` | Tag added to every VDI at creation; `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. | `k8s-managed` |
 | `--xo-client-timeout` | HTTP timeout for XenOrchestra API requests. Defaults to `30s`, increase for large pools or slow connections. | `30s` |
-| `--node-metadata-source` | How the node plugin resolves the pool ID and VM identity: `kubernetes` (reads `spec.providerID`, requires CCM) or `xo-api` (queries XO directly) | `kubernetes` |

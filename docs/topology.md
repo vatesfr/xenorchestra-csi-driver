@@ -100,20 +100,9 @@ topology.k8s.xenorchestra/host_name_label = <name>
 
 ### Is the CCM mandatory?
 
-The answer depends on which `--node-metadata-source` mode is configured for the
-node plugin. The flag is set in the node DaemonSet arguments.
-
-| `--node-metadata-source` | CCM required? | How pool_id is resolved |
-| ------------------------ | ------------- | ----------------------- |
-| `kubernetes` **(default)** | **Yes** | Reads the `ProviderID` set by the CCM on the Node object. If it is absent, `NodeGetInfo` fails and the node plugin cannot register with kubelet. |
-| `xo-api` | No | Queries the XenOrchestra API directly at startup to resolve the pool ID and VM UUID from the node name. |
-
-#### Choosing the right mode
-
-```
---node-metadata-source=kubernetes   # recommended when CCM is running
---node-metadata-source=xo-api       # use this when CCM is not installed
-```
+Yes. The node plugin resolves pool topology and VM identity from the `ProviderID`
+set by the CCM on the Node object. If it is absent, `NodeGetInfo` fails and the
+node plugin cannot register with kubelet.
 
 When using **`NodeMetadataFromKubernetes`** without the CCM, `spec.providerID` on the
 Node object is empty. `GetNodeMetadata()` calls `ParseProviderID("")`, which returns
