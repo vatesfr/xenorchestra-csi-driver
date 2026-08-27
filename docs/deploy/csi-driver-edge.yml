@@ -162,7 +162,6 @@ spec:
         app.kubernetes.io/name: xenorchestra-csi-driver
         app.kubernetes.io/instance: xenorchestra-csi-driver
         app.kubernetes.io/component: node
-      annotations:
     spec:
       enableServiceLinks: false
       serviceAccountName: xenorchestra-csi-driver-node
@@ -217,12 +216,9 @@ spec:
           imagePullPolicy: Always
           args:
             - --v=5
+            - --mode=node
             - --endpoint=unix:///csi/csi.sock
             - --node-name=$(KUBE_NODE_NAME)
-            - --config-file=/etc/xenorchestra/config.yaml
-            - --xo-client-timeout=30s
-            - --node-metadata-source=kubernetes
-            - --cluster-tag=k8s-managed
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -250,9 +246,6 @@ spec:
               mountPropagation: Bidirectional
             - name: device-dir
               mountPath: /dev
-            - name: xo-cloud-config
-              mountPath: /etc/xenorchestra
-              readOnly: true
           resources:
             limits:
               memory: 1000Mi
@@ -280,13 +273,6 @@ spec:
           hostPath:
             path: /dev
             type: Directory
-        - name: xo-cloud-config
-          secret:
-            secretName: xenorchestra-csi-driver
-            items:
-              - key: config.yaml
-                path: config.yaml
-            defaultMode: 416
 
 ---
 # Source: xenorchestra-csi-driver/templates/controller.yaml
@@ -352,12 +338,14 @@ spec:
           imagePullPolicy: Always
           args:
             - --v=5
+            - --mode=controller
             - --endpoint=unix:///csi/csi.sock
             - --node-name=$(KUBE_NODE_NAME)
             - --config-file=/etc/xenorchestra/config.yaml
             - --vdi-name-prefix=csi-
             - --xo-client-timeout=30s
             - --cluster-tag=k8s-managed
+            - --kubernetes-pool-tag=k8s-pool
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
