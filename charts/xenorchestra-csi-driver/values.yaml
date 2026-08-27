@@ -7,7 +7,8 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Use either an existing secret, an inline config, or extraEnv/envFrom.
+# Controller credentials: use an existing secret, inline config, or extraEnv/envFrom.
+# They are never mounted or injected into node pods.
 existingConfigSecret: ""
 existingConfigSecretKey: config.yaml
 config: {}
@@ -31,7 +32,7 @@ driver:
   vdiNamePrefix: csi-
   xoClientTimeout: 30s
   clusterTag: k8s-managed
-  nodeMetadataSource: kubernetes
+  kubernetesPoolTag: k8s-pool
   extraArgs: []
   extraEnv: []
   envFrom: []

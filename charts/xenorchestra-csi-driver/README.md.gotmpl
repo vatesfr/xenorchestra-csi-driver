@@ -26,11 +26,10 @@ CSI driver for Xen Orchestra: it provides persistent storage for Kubernetes work
 | Kubernetes | 1.26+ |
 | Helm | 3+ |
 
-The chart defaults to `driver.nodeMetadataSource=kubernetes`, which requires the
+The chart requires the
 [XenOrchestra Cloud Controller Manager](https://github.com/vatesfr/xenorchestra-cloud-controller-manager):
-the CCM sets `spec.providerID` on each Node and the CSI node plugin uses it to
-resolve the pool and VM identities. Without the CCM, set
-`driver.nodeMetadataSource=xo-api` so the driver queries the Xen Orchestra API directly.
+the CCM sets Xen Orchestra metadata on each Node, and the CSI node plugin uses
+it to resolve pool and VM identities without accessing the Xen Orchestra API.
 
 ## Create the credentials secret
 
@@ -53,7 +52,7 @@ kubectl -n kube-system create secret generic xenorchestra-csi-driver \
 If the CCM is already installed, you can reuse its secret by setting
 `existingConfigSecret` instead of creating a new one. Credentials may also be
 provided inline under `config` (the chart then creates the secret) or through
-`driver.envFrom`.
+`driver.envFrom`. These credentials are only made available to the controller.
 
 ## Install the chart
 

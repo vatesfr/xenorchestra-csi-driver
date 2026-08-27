@@ -23,13 +23,10 @@ spec:
         app.kubernetes.io/name: {{ include "xenorchestra-csi-driver.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: node
+      {{- with .Values.node.podAnnotations }}
       annotations:
-        {{- if include "xenorchestra-csi-driver.configSecretCreated" . }}
-        checksum/config: {{ toJson .Values.config | sha256sum }}
-        {{- end }}
-        {{- with .Values.node.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
     spec:
       enableServiceLinks: false
       serviceAccountName: {{ include "xenorchestra-csi-driver.nodeServiceAccountName" . }}
@@ -80,14 +77,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --v={{ .Values.driver.logVerbosityLevel }}
+            - --mode=node
             - --endpoint=unix:///csi/csi.sock
             - --node-name=$(KUBE_NODE_NAME)
-            {{- if include "xenorchestra-csi-driver.configAvailable" . }}
-            - --config-file=/etc/xenorchestra/config.yaml
-            {{- end }}
-            - --xo-client-timeout={{ .Values.driver.xoClientTimeout }}
-            - --node-metadata-source={{ .Values.driver.nodeMetadataSource }}
-            - --cluster-tag={{ .Values.driver.clusterTag }}
             {{- with .Values.driver.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -96,13 +88,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            {{- with .Values.driver.extraEnv }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- with .Values.driver.envFrom }}
-          envFrom:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           ports:
             - name: healthz
               containerPort: 29603
@@ -125,11 +110,6 @@ spec:
               mountPropagation: Bidirectional
             - name: device-dir
               mountPath: /dev
-            {{- if include "xenorchestra-csi-driver.configAvailable" . }}
-            - name: xo-cloud-config
-              mountPath: /etc/xenorchestra
-              readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.node.resources | nindent 12 }}
       {{- with .Values.node.nodeSelector }}
@@ -161,13 +141,4 @@ spec:
           hostPath:
             path: /dev
             type: Directory
-        {{- if include "xenorchestra-csi-driver.configAvailable" . }}
-        - name: xo-cloud-config
-          secret:
-            secretName: {{ include "xenorchestra-csi-driver.configSecretName" . }}
-            items:
-              - key: {{ .Values.existingConfigSecretKey }}
-                path: config.yaml
-            defaultMode: 416
-        {{- end }}
 {{- end }}

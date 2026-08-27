@@ -62,6 +62,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --v={{ .Values.driver.logVerbosityLevel }}
+            - --mode=controller
             - --endpoint=unix:///csi/csi.sock
             - --node-name=$(KUBE_NODE_NAME)
             {{- if include "xenorchestra-csi-driver.configAvailable" . }}
@@ -70,6 +71,7 @@ spec:
             - --vdi-name-prefix={{ .Values.driver.vdiNamePrefix }}
             - --xo-client-timeout={{ .Values.driver.xoClientTimeout }}
             - --cluster-tag={{ .Values.driver.clusterTag }}
+            - --kubernetes-pool-tag={{ .Values.driver.kubernetesPoolTag }}
             {{- with .Values.driver.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

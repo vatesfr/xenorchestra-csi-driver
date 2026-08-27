@@ -24,11 +24,10 @@ CSI driver for Xen Orchestra: it provides persistent storage for Kubernetes work
 | Kubernetes | 1.26+ |
 | Helm | 3+ |
 
-The chart defaults to `driver.nodeMetadataSource=kubernetes`, which requires the
+The chart requires the
 [XenOrchestra Cloud Controller Manager](https://github.com/vatesfr/xenorchestra-cloud-controller-manager):
-the CCM sets `spec.providerID` on each Node and the CSI node plugin uses it to
-resolve the pool and VM identities. Without the CCM, set
-`driver.nodeMetadataSource=xo-api` so the driver queries the Xen Orchestra API directly.
+the CCM sets Xen Orchestra metadata on each Node, and the CSI node plugin uses
+it to resolve pool and VM identities without accessing the Xen Orchestra API.
 
 ## Create the credentials secret
 
@@ -51,7 +50,7 @@ kubectl -n kube-system create secret generic xenorchestra-csi-driver \
 If the CCM is already installed, you can reuse its secret by setting
 `existingConfigSecret` instead of creating a new one. Credentials may also be
 provided inline under `config` (the chart then creates the secret) or through
-`driver.envFrom`.
+`driver.envFrom`. These credentials are only made available to the controller.
 
 ## Install the chart
 
@@ -89,8 +88,10 @@ for StorageClass examples, testing, and the full parameter reference.
 | csidriver.enabled | bool | `true` |  |
 | driver.name | string | `"csi.xenorchestra.vates.tech"` |  |
 | driver.logVerbosityLevel | int | `2` |  |
+| driver.vdiNamePrefix | string | `"csi-"` |  |
+| driver.xoClientTimeout | string | `"30s"` |  |
 | driver.clusterTag | string | `"k8s-managed"` |  |
-| driver.nodeMetadataSource | string | `"kubernetes"` |  |
+| driver.kubernetesPoolTag | string | `"k8s-pool"` |  |
 | driver.extraArgs | list | `[]` |  |
 | driver.extraEnv | list | `[]` |  |
 | driver.envFrom | list | `[]` |  |
@@ -144,9 +145,15 @@ for StorageClass examples, testing, and the full parameter reference.
 | sidecars.attacher.image.repository | string | `"registry.k8s.io/sig-storage/csi-attacher"` |  |
 | sidecars.attacher.image.tag | string | `"v4.11.0"` |  |
 | sidecars.attacher.image.pullPolicy | string | `"IfNotPresent"` |  |
+| sidecars.attacher.resources.requests.cpu | string | `"10m"` |  |
+| sidecars.attacher.resources.requests.memory | string | `"20Mi"` |  |
+| sidecars.attacher.resources.limits.memory | string | `"100Mi"` |  |
 | sidecars.provisioner.image.repository | string | `"registry.k8s.io/sig-storage/csi-provisioner"` |  |
 | sidecars.provisioner.image.tag | string | `"v6.2.0"` |  |
 | sidecars.provisioner.image.pullPolicy | string | `"IfNotPresent"` |  |
+| sidecars.provisioner.resources.requests.cpu | string | `"10m"` |  |
+| sidecars.provisioner.resources.requests.memory | string | `"20Mi"` |  |
+| sidecars.provisioner.resources.limits.memory | string | `"100Mi"` |  |
 | sidecars.registrar.image.repository | string | `"registry.k8s.io/sig-storage/csi-node-driver-registrar"` |  |
 | sidecars.registrar.image.tag | string | `"v2.16.0"` |  |
 | sidecars.registrar.image.pullPolicy | string | `"IfNotPresent"` |  |

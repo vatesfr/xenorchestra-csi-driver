@@ -33,7 +33,7 @@ app.kubernetes.io/part-of: xenorchestra-csi-driver
 {{- end }}
 
 {{- define "xenorchestra-csi-driver.configSecretCreated" -}}
-{{- if and .Values.config (not .Values.existingConfigSecret) (or .Values.controller.enabled .Values.node.enabled) }}
+{{- if and .Values.config (not .Values.existingConfigSecret) .Values.controller.enabled }}
 true
 {{- end }}
 {{- end }}
