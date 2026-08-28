@@ -14,7 +14,7 @@ require (
 	github.com/vatesfr/xenorchestra-go-sdk v1.18.0
 	github.com/vatesfr/xenorchestra-k8s-common v0.3.0
 	go.uber.org/mock v0.6.0
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.0
 	k8s.io/apimachinery v0.36.3
 	k8s.io/client-go v0.36.3
 	k8s.io/klog/v2 v2.140.0
