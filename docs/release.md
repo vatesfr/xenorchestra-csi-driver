@@ -6,11 +6,13 @@ Each release is triggered by a Git tag and publishes the driver image and/or the
 
 | Element | Format | Where |
 |---------|--------|-------|
-| Application image | `vX.Y.Z` | Docker tag, value of `appVersion` |
-| Chart | `X.Y.Z` (no `v` prefix) | `version` in `Chart.yaml`, independent of the app |
+| Application image | `vX.Y.Z[-PRERELEASE]` | Docker tag, value of `appVersion` |
+| Chart | `X.Y.Z[-PRERELEASE]` (no `v` prefix) | `version` in `Chart.yaml`, independent of the app |
 | Release tag | `vAPP[-N]` | Git tag that triggers the CI; `N` is the number of chart-only releases for that app version |
 
 The chart version is **decoupled** from the app version: it follows its own semver. The chart's `appVersion` is the version of the driver deployed by default (`image.tag` is empty by default, so the deployment uses `appVersion` as the image tag; users can override with `--set image.tag=...`).
+
+Application prereleases use the standard SemVer form, for example `v1.0.0-rc.1`. A prerelease tag publishes both the image and the chart; only a positive numeric suffix such as `v1.0.0-1` denotes a chart-only release.
 
 ## Chart version bump
 
