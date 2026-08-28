@@ -1,3 +1,76 @@
+<a name="v1.0.0-rc.1"></a>
+## [v1.0.0-rc.1](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v0.4.0...v1.0.0-rc.1) (2026-08-28)
+
+Welcome to the v1.0.0-rc.1 release of Kubernetes CSI driver for Xen Orchestra!
+
+### Bug Fixes
+
+- **ci:** support prerelease application tags
+
+### Features
+
+- **helm:** align chart with split driver modes
+- **helm:** add component toggles
+- add helmchart
+- restrict Xen Orchestra access to CSI controller
+- add SR selection using the VolumeAttributesClass feature in PVC
+- move client timeout to driver flag and improve kxo overrides
+
+### Changelog
+
+* bc7d9de chore(release): prepare v1.0.0-rc.1
+* 173fc68 fix(ci): support prerelease application tags
+* 66017c5 build(deps): bump k8s.io/mount-utils
+* 399d286 build(deps): bump google.golang.org/grpc from 1.82.1 to 1.83.0
+* a957782 build(deps): bump github/codeql-action from 4.35.5 to 4.37.7
+* c17cfc2 build(deps): bump actions/setup-go from 6 to 7
+* cdf480d feat(helm): align chart with split driver modes
+* d47f3a6 ci: update checkout and docker login actions
+* ccbb55e feat(helm): add component toggles
+* 440d4b2 test: add Helm hook test support for CSI volume provisioning
+* 7ca17e3 feat: add helmchart
+* 334fd7c feat: restrict Xen Orchestra access to CSI controller
+* db7fd67 doc(example): remove un-accurate comment
+* 9d2410a refactor: fix linter error
+* 9487d49 tests(sanity): add and fix tests for new feature "VolumeAttributeClass"
+* 8846c0b refactor(controller): split CreateVolume into functions
+* 4e4a9b7 build(deps): bump dependencies packages versions
+* d5e75b3 feat: add SR selection using the VolumeAttributesClass feature in PVC
+* 7222c33 feat: move client timeout to driver flag and improve kxo overrides
+<a name="v1.0.0-rc.1"></a>
+## [v1.0.0-rc.1](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v0.4.0...v1.0.0-rc.1) (2026-08-28)
+
+Welcome to the v1.0.0-rc.1 release of Kubernetes CSI driver for Xen Orchestra!
+
+
+### Features
+
+- **helm:** align chart with split driver modes
+- **helm:** add component toggles
+- add helmchart
+- restrict Xen Orchestra access to CSI controller
+- add SR selection using the VolumeAttributesClass feature in PVC
+- move client timeout to driver flag and improve kxo overrides
+
+### Changelog
+
+* 66017c5 build(deps): bump k8s.io/mount-utils
+* 399d286 build(deps): bump google.golang.org/grpc from 1.82.1 to 1.83.0
+* a957782 build(deps): bump github/codeql-action from 4.35.5 to 4.37.7
+* c17cfc2 build(deps): bump actions/setup-go from 6 to 7
+* cdf480d feat(helm): align chart with split driver modes
+* d47f3a6 ci: update checkout and docker login actions
+* ccbb55e feat(helm): add component toggles
+* 440d4b2 test: add Helm hook test support for CSI volume provisioning
+* 7ca17e3 feat: add helmchart
+* 334fd7c feat: restrict Xen Orchestra access to CSI controller
+* db7fd67 doc(example): remove un-accurate comment
+* 9d2410a refactor: fix linter error
+* 9487d49 tests(sanity): add and fix tests for new feature "VolumeAttributeClass"
+* 8846c0b refactor(controller): split CreateVolume into functions
+* 4e4a9b7 build(deps): bump dependencies packages versions
+* d5e75b3 feat: add SR selection using the VolumeAttributesClass feature in PVC
+* 7222c33 feat: move client timeout to driver flag and improve kxo overrides
 <a name="v0.0.1"></a>
 ## v0.0.1 (2026-01-06)
 

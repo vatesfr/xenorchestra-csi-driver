@@ -38,8 +38,8 @@ The driver code changes, with or without chart changes.
 2. Generate the release files:
 
    ```shell
-   TAG=vX.Y.Z make docs
-   RELEASE_TAG=vX.Y.Z make release-update
+   TAG=v1.0.0-rc.1 make docs
+   RELEASE_TAG=v1.0.0-rc.1 make release-update
    ```
 
 3. Merge into `main`, then create and push the tag:
