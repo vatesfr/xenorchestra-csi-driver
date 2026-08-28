@@ -31,17 +31,18 @@ jobs:
           # Release commits must belong to the main branch.
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
-          expected_app_version="${GITHUB_REF_NAME%-*}"
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*$ ]]; then
+            echo "CHART_ONLY=true" >> "$GITHUB_ENV"
+            expected_app_version="${GITHUB_REF_NAME%-*}"
+          else
+            echo "CHART_ONLY=false" >> "$GITHUB_ENV"
+            expected_app_version="$GITHUB_REF_NAME"
+          fi
+
           app_version="$(sed -n 's/^appVersion: //p' charts/xenorchestra-csi-driver/Chart.yaml)"
           if [ "$app_version" != "$expected_app_version" ]; then
             echo "Chart appVersion ($app_version) must match the application version ($expected_app_version)"
             exit 1
-          fi
-
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*$ ]]; then
-            echo "CHART_ONLY=true" >> "$GITHUB_ENV"
-          else
-            echo "CHART_ONLY=false" >> "$GITHUB_ENV"
           fi
 
           echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
