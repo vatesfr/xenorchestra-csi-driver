@@ -21,20 +21,24 @@ volume operations are possible on that node (see [Topology and Placement](docs/t
 
 - Static volume provisioning (use an existing VDI by UUID).
 - Dynamic volume provisioning (automatically create a VDI from a StorageClass).
+- Topology-aware pool selection: automatic pool placement from the pod's topology hints when no `poolId` is set.
 - Local storage support: pin VDIs to a host-local SR with automatic migration on reschedule.
 - Volume migration via `VolumeAttributesClass`: create a VDI directly in a specific Storage Repository (SR),
   or migrate it after creation within the same pool.
 
-## Prerequisite
+## Prerequisites
 
-* XenOrchestra version **6.4+**
-* XCP-ng version 8.3+
-* Network connectivity between the CSI controller pod and the XO API
+See the [installation guide](docs/install.md#requirements) for the full
+requirements list (XCP-ng 8.3+, Xen Orchestra 6.4+, Kubernetes 1.26+, network
+connectivity to the XO API, and the required CCM).
 
 ## Documentation
 
 - [Documentation index](docs/README.md) – entry point to guides, migrations, and references.
-- [Installation guide](docs/install.md) – requirements, credentials, StorageClass, static and dynamic provisioning.
+- [Installation guide](docs/install.md) – requirements, CCM dependency, credentials, and how to choose an installation method.
+- [Installation with Helm](docs/install-helm.md) – Helm chart from the OCI registry or a local checkout, component toggles, MicroK8s, and the Helm test.
+- [Installation with static deployment files](docs/install-static.md) – apply the pre-rendered manifests with `kubectl`.
+- [Usage and Examples](docs/usage.md) – provisioning modes, StorageClasses, dynamic and static examples, VAC migration, and the driver parameters reference.
 - [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
 - [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
 - [Reference: Volume Handle and Volume ID in v0.3.0](docs/references/volume-handle-and-volume-id-v0.3.0.md) – details about stable CSI identity semantics.
@@ -61,7 +65,7 @@ to `<prefix><volumeId>-<volumeName>`.
 
 **Renaming a VDI in Xen Orchestra breaks this fallback.** If the tag
 has also been erased, the driver will no longer be able to locate the VDI and
-volume operations (`DeleteVolume`, `ControllerUnpublishVolume`) will fail  and
+volume operations (`DeleteVolume`, `ControllerUnpublishVolume`) will fail and
 the VDI will be considered deleted.
 
 CSI-managed VDIs are identifiable by:
@@ -84,104 +88,17 @@ helm upgrade --install xenorchestra-csi-driver \
 ```
 
 See the [installation guide](docs/install.md) for requirements, credentials,
-MicroK8s configuration, StorageClasses, component toggles, installation tests,
-and uninstallation.
+and how to choose between the [Helm chart](docs/install-helm.md) and the
+[static deployment files](docs/install-static.md). StorageClasses, component
+toggles, and usage examples live in the
+[Usage and Examples guide](docs/usage.md).
 
 
 ## Driver parameters
 
-### Static provisioning
-
-Manually attach a disk to the node VM.
-> [Get an example](./examples/pv-volume.yaml)
-
-1. Create a VDI using the Xen Orchestra GUI, or any other tools such as CLI, API or Terraform.
-2. Create a persistent volume (PV) and enter the UUID of the VDI created in Step 1 into the 'volumeHandle' property.
-3. Use the PV with a PVC and then mount the volume inside your pod.
-
-Name | Meaning | Example | Required | Default
---- | --- | --- | --- | ---
-`volumeHandle` | Disk identifier, it must be the VDI UUID | `b05f63f2-692a-4833-9453-980a73f9f27f` | Yes | N/A
-`driver` | Driver to use for the PV | it must be `csi.xenorchestra.vates.tech` | Yes | N/A
-
-### Dynamic provisioning
-
-The driver creates a new VDI each time a PVC is bound. Three selection modes are supported,
-in order of precedence: **VAC SR > explicit poolId > topology-aware**.
-> [Get an example](./examples/csi-sc-dynamic.yaml)
-
-#### VAC SR selection (highest precedence, Kubernetes ≥ 1.31)
-
-Set `storageRepositoryId` in a `VolumeAttributesClass`. The driver creates the VDI
-directly in the specified SR. The SR is validated: it must exist, and belong to the
-pool selected by `poolId` or topology. If `storageType` is set in the StorageClass,
-the SR's shared/local type must match.
-
-When using VAC SR selection, the `storageType: local` automatic local-SR override is
-**not** applied — the VDI lands exactly where the VAC points.
-
-```yaml
-apiVersion: storage.k8s.io/v1beta1
-kind: VolumeAttributesClass
-metadata:
-  name: csi-xo-specific-sr
-driver: csi.xenorchestra.vates.tech
-parameters:
-  storageRepositoryId: "<sr-uuid>"
-```
-
-Name | Meaning | Example | Required
---- | --- | --- | ---
-`storageRepositoryId` | UUID of the target Storage Repository. The VDI is created directly in this SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | Yes
-
-Any other parameter key in the `VolumeAttributesClass` is rejected with
-`InvalidArgument` — the driver only accepts the keys listed above.
-
-#### Explicit pool (simple)
-
-Set `poolId` in `StorageClass.parameters`. The driver always provisions into that pool's
-default SR. The `poolId` is validated against the pod's topology requirements at
-provision time — an error is returned if they are incompatible.
-
-Name | Meaning | Example | Required | Default
---- | --- | --- | --- | ---
-`poolId` | UUID of the Xen Orchestra pool. The VDI is created on the pool's default SR. | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` | No | —
-`storageType` | Storage placement: `shared` (pool default SR) or `local` (host-local SR, migrated at attach time). | `local` | No | `shared`
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-xenorchestra-sc-dynamic
-provisioner: csi.xenorchestra.vates.tech
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: false
-parameters:
-  poolId: "<xo-pool-uuid>"
-```
-
-#### Topology-aware (no poolId)
-
-Omit `poolId` entirely. The driver selects the pool automatically from the
-`accessibility_requirements` passed by the Kubernetes scheduler, following the
-CSI spec ordering: **preferred topologies first**, then **requisite topologies**
-as fallback. The first pool whose default SR is accessible is used.
-
-This mode requires `volumeBindingMode: WaitForFirstConsumer` and nodes labelled
-with `topology.k8s.xenorchestra/pool_id` (set by the CCM or the CSI node plugin).
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-xenorchestra-sc-topology
-provisioner: csi.xenorchestra.vates.tech
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: false
-# no parameters block required
-```
+For provisioning modes, StorageClass examples, dynamic and static usage,
+`VolumeAttributesClass` migration, and the full driver parameter reference, see
+the [Usage and Examples guide](docs/usage.md).
 
 
 ## 🚀 TODO / Roadmap
@@ -196,7 +113,7 @@ allowVolumeExpansion: false
 ### Storage Management
 - [ ] Volume Listing
 - [ ] Storage Capacity
-- [ ] Volume Validation, Information, Modification
+- [-] Volume Validation, Information, Modification
 - [ ] Access modes - Add ReadWriteMany and ReadOnlyMany support
 
 ### Security & Configuration
@@ -206,15 +123,15 @@ allowVolumeExpansion: false
 
 ### Performance & Monitoring
 - [ ] Metrics endpoint
-- [ ] Switch completely to the Xen Orchestra REST API
+- [x] Switch completely to the Xen Orchestra REST API
 
 ### Other
 - [ ] Complete the documentation (installation, configuration, examples...)
-- [ ] Provide improved deployment methods (using kubectl, Helm or other)
+- [x] Provide improved deployment methods (using kubectl, Helm or other)
 - [ ] Test with other Kubernetes clusters (Talos, Rancher, etc.)
 
 ### CI & Testing
-- [ ] Proper CI pipelines
+- [x] Proper CI pipelines
 - [ ] Unit test and integration tests
 
 ### XO related
@@ -224,7 +141,7 @@ allowVolumeExpansion: false
 - [x] `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — `AccessibleTopology` returned in `CreateVolumeResponse`, topology requirements honoured in `CreateVolumeRequest`
 - [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
 - [x] Cluster Topology support
-- [ ] Multi-SR support (migration...)
+- [x] Multi-SR support (migration...)
 - [x] Local SR support (`storageType: local` — VDI migration to host-local SR in `ControllerPublishVolume`)
 - [x] Multi-pool support
 - [x] XO CCM

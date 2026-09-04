@@ -163,7 +163,7 @@ helm-release: ## Helm Release
 ############
 
 .PHONY: docs
-docs:
+docs: ## Generate documentation for the Helm chart
 	yq -i '.appVersion = "$(TAG)"' charts/xenorchestra-csi-driver/Chart.yaml -y
 	helm template --namespace kube-system xenorchestra-csi-driver \
 		--set existingConfigSecret=xenorchestra-csi-driver \
@@ -178,7 +178,7 @@ docs:
 		charts/xenorchestra-csi-driver > docs/deploy/csi-driver-microk8s.yml
 	helm-docs --sort-values-order=file charts/xenorchestra-csi-driver
 
-release-update:
+release-update: ## Update the release notes using git-cliff
 ifdef RELEASE_TAG
 	git-cliff --config cliff.toml --tag $(RELEASE_TAG) --unreleased --prepend CHANGELOG.md
 else
@@ -190,7 +190,7 @@ endif
 # Docker Abstractions
 #
 
-docker-init:
+docker-init: ## Initialize the Docker buildx environment for multiarch builds
 	@docker run --rm --privileged multiarch/qemu-user-static -p yes ||:
 
 	@docker context create multiarch ||:
@@ -208,9 +208,9 @@ images: ## Build images
 		-f Dockerfile .
 
 .PHONY: images-checks
-images-checks: images
+images-checks: images ## Run security checks on the built images
 	trivy image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL --no-progress $(IMAGE):$(TAG)
 
 .PHONY: images-cosign
-images-cosign:
+images-cosign: ## Sign the built images using Cosign
 	@cosign sign --yes $(COSING_ARGS) --recursive $(IMAGE):$(TAG)

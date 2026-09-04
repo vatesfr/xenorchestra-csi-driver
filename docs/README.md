@@ -1,13 +1,16 @@
 ## Documentation Index
 
-This folder is organized by purpose:
-- guides: evergreen operational and development documentation,
-- migrations: version-to-version upgrade procedures,
-- references: version-specific technical behavior and concepts.
+Evergreen guides live at the top level of this folder; version-specific
+material is grouped into subfolders:
+- `migrations/`: version-to-version upgrade procedures,
+- `references/`: version-specific technical behavior and concepts.
 
 ## Current guides
 
-- [Installation guide](install.md)
+- [Installation guide](install.md) – entry point: requirements, CCM dependency, credentials, and how to choose an installation method.
+- [Installation with Helm](install-helm.md) – Helm chart from the OCI registry or a local checkout, component toggles, MicroK8s, and the Helm test.
+- [Installation with static deployment files](install-static.md) – apply the pre-rendered manifests in `deploy/` with `kubectl`.
+- [Usage and Examples](usage.md) – provisioning modes, StorageClasses, dynamic and static examples, VAC migration, and the driver parameters reference.
 - [Topology and Placement](topology.md)
 - [Developer guide](development.md)
 - [Release process](release.md)

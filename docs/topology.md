@@ -152,7 +152,7 @@ SR belongs to the resolved pool.
 When a `VolumeAttributesClass` with `storageRepositoryId` is attached to a PVC,
 the driver creates the VDI directly in the specified SR at provision time.
 Pool selection still applies (via `poolId` or topology-aware mode) to validate
-that the SR belongs to the correct pool. See [Installation Guide](install.md)
+that the SR belongs to the correct pool. See [Usage and Examples](usage.md)
 for usage details.
 
 ### Explicit `poolId` (simple mode)

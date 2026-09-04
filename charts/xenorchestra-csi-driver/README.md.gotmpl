@@ -22,7 +22,7 @@ CSI driver for Xen Orchestra: it provides persistent storage for Kubernetes work
 | Component | Minimum version |
 | --------- | --------------- |
 | XCP-ng | 8.3+ |
-| Xen Orchestra | 5.110.1+ |
+| Xen Orchestra | 6.4+ |
 | Kubernetes | 1.26+ |
 | Helm | 3+ |
 
@@ -67,6 +67,8 @@ The controller, node plugin, and `CSIDriver` resource can be toggled independent
 with `controller.enabled`, `node.enabled`, and `csidriver.enabled`.
 
 See the [installation guide](https://github.com/vatesfr/xenorchestra-csi-driver/blob/main/docs/install.md)
-for StorageClass examples, testing, and the full parameter reference.
+for requirements and credentials, the [Helm installation guide](https://github.com/vatesfr/xenorchestra-csi-driver/blob/main/docs/install-helm.md)
+for the Helm test, and the [Usage and Examples guide](https://github.com/vatesfr/xenorchestra-csi-driver/blob/main/docs/usage.md)
+for StorageClass examples and the full parameter reference.
 
 {{ template "chart.valuesSection" . }}
