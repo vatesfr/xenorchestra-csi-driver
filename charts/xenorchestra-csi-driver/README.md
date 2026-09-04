@@ -160,3 +160,9 @@ for StorageClass examples, testing, and the full parameter reference.
 | sidecars.registrar.resources.requests.cpu | string | `"10m"` |  |
 | sidecars.registrar.resources.requests.memory | string | `"20Mi"` |  |
 | sidecars.registrar.resources.limits.memory | string | `"100Mi"` |  |
+| sidecars.resizer.image.repository | string | `"registry.k8s.io/sig-storage/csi-resizer"` |  |
+| sidecars.resizer.image.tag | string | `"v2.2.1"` |  |
+| sidecars.resizer.image.pullPolicy | string | `"IfNotPresent"` |  |
+| sidecars.resizer.resources.requests.cpu | string | `"10m"` |  |
+| sidecars.resizer.resources.requests.memory | string | `"20Mi"` |  |
+| sidecars.resizer.resources.limits.memory | string | `"100Mi"` |  |
