@@ -143,3 +143,14 @@ sidecars:
         memory: 20Mi
       limits:
         memory: 100Mi
+  resizer:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-resizer
+      tag: v2.2.1
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        memory: 100Mi
