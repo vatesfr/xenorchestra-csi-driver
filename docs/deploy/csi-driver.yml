@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/version: "v1.0.0-rc.1"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
+
 ---
 # Source: xenorchestra-csi-driver/templates/serviceaccounts.yaml
 apiVersion: v1
@@ -44,6 +45,7 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -71,7 +73,7 @@ rules:
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses", "csinodes"]
+    resources: ["storageclasses", "csinodes", "volumeattributesclasses"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
@@ -88,6 +90,7 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -109,6 +112,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: xenorchestra-csi-driver-node
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -412,6 +416,28 @@ spec:
             httpGet:
               path: /metrics
               port: 29606
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        - name: csi-resizer
+          image: "registry.k8s.io/sig-storage/csi-resizer:v2.2.1"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --v=2
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=:29607
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 29607
             initialDelaySeconds: 10
             periodSeconds: 20
           resources:
