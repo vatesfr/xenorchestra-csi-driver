@@ -12,7 +12,6 @@ metadata:
     app.kubernetes.io/version: "v1.0.0-rc.1"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
-
 ---
 # Source: xenorchestra-csi-driver/templates/serviceaccounts.yaml
 apiVersion: v1
@@ -45,7 +44,6 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
-
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -90,7 +88,6 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
-
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -112,7 +109,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: xenorchestra-csi-driver-node
-
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -222,6 +218,7 @@ spec:
             - --v=2
             - --mode=node
             - --endpoint=unix:///csi/csi.sock
+            - --driver-name=csi.xenorchestra.vates.tech
             - --node-name=$(KUBE_NODE_NAME)
           env:
             - name: KUBE_NODE_NAME
@@ -344,6 +341,7 @@ spec:
             - --v=2
             - --mode=controller
             - --endpoint=unix:///csi/csi.sock
+            - --driver-name=csi.xenorchestra.vates.tech
             - --node-name=$(KUBE_NODE_NAME)
             - --config-file=/etc/xenorchestra/config.yaml
             - --vdi-name-prefix=csi-

@@ -27,6 +27,8 @@ csidriver:
   enabled: true
 
 driver:
+  # Name registered by the driver binary (--driver-name), used as the CSIDriver
+  # object name and the kubelet plugin directory. Keep it consistent everywhere.
   name: csi.xenorchestra.vates.tech
   logVerbosityLevel: 2
   vdiNamePrefix: csi-
