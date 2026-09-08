@@ -64,6 +64,7 @@ spec:
             - --v={{ .Values.driver.logVerbosityLevel }}
             - --mode=controller
             - --endpoint=unix:///csi/csi.sock
+            - --driver-name={{ .Values.driver.name }}
             - --node-name=$(KUBE_NODE_NAME)
             {{- if include "xenorchestra-csi-driver.configAvailable" . }}
             - --config-file=/etc/xenorchestra/config.yaml

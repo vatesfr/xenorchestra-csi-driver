@@ -79,6 +79,7 @@ spec:
             - --v={{ .Values.driver.logVerbosityLevel }}
             - --mode=node
             - --endpoint=unix:///csi/csi.sock
+            - --driver-name={{ .Values.driver.name }}
             - --node-name=$(KUBE_NODE_NAME)
             {{- with .Values.driver.extraArgs }}
             {{- toYaml . | nindent 12 }}
