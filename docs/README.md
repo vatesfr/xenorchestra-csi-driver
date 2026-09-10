@@ -9,7 +9,7 @@ material is grouped into subfolders:
 
 - [Installation guide](install.md) – entry point: requirements, CCM dependency, credentials, and how to choose an installation method.
 - [Installation with Helm](install-helm.md) – Helm chart from the OCI registry or a local checkout, component toggles, MicroK8s, and the Helm test.
-- [Installation with static deployment files](install-static.md) – apply the pre-rendered manifests in `deploy/` with `kubectl`.
+- [Installation with static deployment files](install-static.md) – apply the pre-rendered manifests in [`docs/deploy/`](deploy/) with `kubectl`.
 - [Usage and Examples](usage.md) – provisioning modes, StorageClasses, dynamic and static examples, VAC migration, and the driver parameters reference.
 - [Topology and Placement](topology.md)
 - [Developer guide](development.md)

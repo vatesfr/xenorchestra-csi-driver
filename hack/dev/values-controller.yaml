@@ -1,0 +1,32 @@
+# Dev-mode overrides for the controller, used by DevSpace
+# (`devspace dev --pipeline dev-controller` — see docs/development.md).
+#
+# Renders the controller Deployment (+ its ServiceAccount/RBAC) on top of an
+# existing driver installation. The node DaemonSet and the cluster-scoped
+# CSIDriver are disabled because they are provided by the regular install.
+fullnameOverride: csi-xenorchestra-dev-controller
+
+image:
+  tag: edge
+  pullPolicy: Always
+
+
+# Reuse the credentials secret (see docs/install.md). If your base install
+# reused the CCM credentials instead, set this to
+# xenorchestra-cloud-controller-manager.
+existingConfigSecret: xenorchestra-cloud-controller-manager.
+
+driver:
+  logVerbosityLevel: 5
+  xoClientTimeout: 240s
+  clusterTag: k8s-managed-user
+  vdiNamePrefix: dev-csi-
+
+controller:
+  hostNetwork: true
+
+node:
+  enabled: false
+
+csidriver:
+  enabled: false
