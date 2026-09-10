@@ -41,7 +41,7 @@ apiVersion: storage.k8s.io/v1
 kind: VolumeAttributesClass
 metadata:
   name: csi-xo-specific-sr
-driver: csi.xenorchestra.vates.tech
+driverName: csi.xenorchestra.vates.tech
 parameters:
   storageRepositoryId: "<sr-uuid>"   # UUID of the target SR
 ```
