@@ -1,3 +1,28 @@
+<a name="v1.0.0-rc.1-2"></a>
+## [v1.0.0-rc.1-2](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v1.0.0-rc.1...v1.0.0-rc.1-2) (2026-09-10)
+
+Welcome to the v1.0.0-rc.1-2 release of Kubernetes CSI driver for Xen Orchestra!
+
+### Bug Fixes
+
+- **helm:** add missing flag `driver-name` to the csi-driver
+- **helm:** add resizer sidecar
+- **helm:** add volumeattributesclasses cluster role access
+
+### Features
+
+- **helm:** bump chart version
+
+### Changelog
+
+* de35598 feat(chart): bump chart version
+* 1958b38 chore: update dev doc and tools
+* ddaa497 docs: fix driverName attribute yaml file
+* 6d008c1 fix(chart): add missing flag `driver-name` to the csi-driver
+* b1fbcc3 docs: update the documentation with the latest changes
+* 7c0830f doc: fix volumeattributesclasses
+* 1d60ad6 fix(helm): add resizer sidecar
+* 289c56a fix(helm): add volumeattributesclasses cluster role access
 <a name="v1.0.0-rc.1"></a>
 ## [v1.0.0-rc.1](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v0.4.0...v1.0.0-rc.1) (2026-08-28)
 
