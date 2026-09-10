@@ -13,7 +13,7 @@ This guide covers the local development workflow for the XenOrchestra CSI driver
 | `kubectl` | Interact with Kubernetes |
 | `devspace` | Hot-reload dev environment |
 | `dlv` | Remote debugging (optional) |
-| `zsh` + `autoenv` | `kxo` shell helper (optional) |
+| `helm` | Deploy the driver and the dev overrides |
 
 ---
 
@@ -52,63 +52,42 @@ make vuln
 
 ---
 
-## `kxo` – kubectl shorthand
+## Quick deployment with Helm
 
-`kxo` is a zsh helper that wraps `kubectl` with short aliases for the project manifests.
-It can be loaded automatically when you `cd` into the repository if you have
-[`autoenv`](https://github.com/hyperupcall/autoenv) (or `zsh-autoenv`) installed and sourced in your shell.
+Everything is a chart value — there are no hand-maintained manifests to apply.
+Create the credentials secret (see [install.md](./install.md#create-the-credentials-secret)), then:
 
-### Manual loading
+```bash
+helm upgrade --install csi-driver ./charts/xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set existingConfigSecret=xenorchestra-csi-driver
 
-```zsh
-source hack/kxo.zsh
+# Remove it again
+helm uninstall csi-driver --namespace kube-system
 ```
 
-### Available commands
+Per-environment overrides (image, tags, credentials, ...) are plain helm values:
 
-```text
-kxo [apply|a|delete|d|get|describe|edit] <manifest-key> [manifest-key...]
-kxo create-secret [config-file]
-kxo delete-secret
+```bash
+helm upgrade --install csi-driver ./charts/xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set image.repository=localhost:32000/vatesfr/xenorchestra-csi-driver \
+  --set image.tag=dev \
+  --set image.pullPolicy=Always \
+  --set driver.clusterTag=k8s-managed-$USER \
+  --set driver.vdiNamePrefix=$USER-csi-
 ```
 
-Run `kxo` without arguments to see the list of available manifest keys, which are derived
-automatically from the files in `deploy/` and `examples/`.
+For a full set of overrides, combine values files instead of `--set` flags:
 
-### Examples
-
-```zsh
-# Apply the node DaemonSet
-kxo apply node
-
-# Delete the controller StatefulSet
-kxo delete controller
-
-# Apply multiple manifests at once
-kxo a driver node controller
-
-# Create the XO credentials secret from xo-config.yaml (default)
-kxo create-secret
-
-# Use a custom config file
-kxo create-secret path/to/my-config.yaml
-
-# Delete the XO credentials secret
-kxo delete-secret
+```bash
+helm template csi-driver ./charts/xenorchestra-csi-driver \
+  -f ./charts/xenorchestra-csi-driver/values.edge.yaml \
+  -f my-overrides.yaml   # any extra values
 ```
 
-### Manifest key mapping
-
-| Key | File |
-| --- | ---- |
-| `driver` | `deploy/csi-xenorchestra-driver.yaml` |
-| `node` | `deploy/csi-xenorchestra-node.yaml` |
-| `node-single` | `deploy/csi-xenorchestra-node-single.yaml` |
-| `controller` | `deploy/csi-xenorchestra-controller.yaml` |
-| `controller-dev` | `deploy/csi-xenorchestra-controller-dev.yaml` |
-| `rbac-node` | `deploy/rbac-csi-xenorchestra-node.yaml` |
-| `rbac-controller` | `deploy/rbac-csi-xenorchestra-controller.yaml` |
-| *(examples)* | all files in `examples/` without extension |
+The `docs/deploy/csi-driver*.yml` files are the same chart rendered with `make docs`
+— they exist for the static (no-helm) install path, see [install-static.md](./install-static.md).
 
 ---
 
@@ -124,14 +103,26 @@ syncs your local source files into it. No image rebuild is required between iter
 
 ### Developing the node plugin
 
+The Helm releases are deployed in the namespace DevSpace is pointed at. Before the
+first `devspace dev`, select it once (persisted per project):
+
+```bash
+devspace use namespace kube-system
+```
+
 ```bash
 devspace dev
 ```
 
 This command:
 
-1. Deploys `deploy/csi-xenorchestra-node-single.yaml` (single-node variant, no `DaemonSet`).
-2. Replaces the container image with `golang:1.26.1-trixie`.
+1. Applies `hack/dev/csi-xenorchestra-node-single.yaml`: a single-node node
+   `Deployment` (edge image, verbose logging) plus its ServiceAccount and RBAC.
+   It is a `Deployment` — not a `DaemonSet` — because DevSpace can only take
+   over a `Deployment`, `StatefulSet` or `ReplicaSet`. The base install provides
+   the `CSIDriver` object and the controller. To pin it to one machine, set
+   `nodeSelector.kubernetes.io/hostname` in the manifest.
+2. Replaces the driver container image with `golang:1.26.8-trixie`.
 3. Syncs your workspace into `/app` inside the container.
 4. Opens a bash terminal inside the running container.
 5. Exposes port `2345` for remote debugging.
@@ -163,8 +154,15 @@ make run
 devspace dev --pipeline dev-controller
 ```
 
-The controller pipeline syncs `../xo-sdk-go/` in addition to the driver source, allowing you to
-develop the SDK and the driver in tandem without publishing intermediate SDK versions.
+This renders the chart with `hack/dev/values-controller.yaml`: a controller `Deployment`
+(edge image, verbose logging, the `xenorchestra-csi-driver` credentials secret mounted)
+with the node `DaemonSet` and the `CSIDriver` object disabled — the base install
+provides them. The whole repository is synced into `/app` so you can build the driver
+(and the `xo-sdk-go` dependency, if vendored) in place.
+
+Both dev releases are independent Helm releases (`csi-xenorchestra-dev-node` /
+`csi-xenorchestra-dev-controller`), so you can switch between them at any time.
+Stop a session and its deployment is removed with `devspace purge`.
 
 ### SSH access to the dev container
 
@@ -216,23 +214,26 @@ REGISTRY=<node-ip>:32000 VERSION=dev make images
 docker push <node-ip>:32000/xenorchestra-csi-driver:dev
 ```
 
-### Use the local image in the manifests
+### Use the local image in the deployment
 
-Update the image field in the relevant `deploy/*.yaml` manifests:
-
-```yaml
-image: localhost:32000/xenorchestra-csi-driver:dev
-```
-
-Or set the `IMAGE` environment variable to override the driver container image without
-editing the manifest file:
+Pass the local image as chart values (see [Quick deployment with Helm](#quick-deployment-with-helm)):
 
 ```bash
- IMAGE=localhost:32000/vatesfr/xenorchestra-csi-driver:dev kxo apply node
+helm upgrade --install csi-driver ./charts/xenorchestra-csi-driver \
+  --namespace kube-system \
+  --set image.repository=localhost:32000/vatesfr/xenorchestra-csi-driver \
+  --set image.tag=dev \
+  --set image.pullPolicy=Always
 ```
 
-`kxo` will substitute any line referencing `xenorchestra-csi-driver` with the provided image
-before piping the manifest to `kubectl apply`.
+For DevSpace, the driver image is overridden automatically by the dev container
+image, so no manifest change is needed. To run a node against a specific machine
+with DevSpace, set `nodeSelector.kubernetes.io/hostname` in
+`hack/dev/csi-xenorchestra-node-single.yaml`.
+
+If you use the plain rendered files with `kubectl` and want a pinned image, edit
+the `image:` field in the matching `docs/deploy/*.yml` (regenerate with
+`make docs` after any chart change).
 
 ### MicroK8s kubelet path
 

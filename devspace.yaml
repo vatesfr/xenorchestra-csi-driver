@@ -29,16 +29,28 @@ images:
     image: ghcr.io/vatesfr/xenorchestra-csi-driver
     dockerfile: ./Dockerfile
 
-# This is a list of `deployments` that DevSpace can create for this project
+# Dev deployments live in hack/dev/ and run on top of an existing driver
+# installation (Helm or docs/deploy/csi-driver*.yml), which provides the
+# CSIDriver object and the other component:
+#   node        -> a static single-node Deployment manifest (hack/dev/
+#                  csi-xenorchestra-node-single.yaml). It must be a Deployment,
+#                  not a DaemonSet: DevSpace's start_dev can only adopt
+#                  Deployments/StatefulSets/ReplicaSets.
+#   controller  -> the Helm chart rendered with hack/dev/values-controller.yaml
+# The release namespace is not a per-deployment field in DevSpace — select it
+# once with `devspace use namespace kube-system` (or pass -n/--namespace).
 deployments:
   node:
     kubectl:
       manifests:
-        - deploy/csi-xenorchestra-node-single.yaml
+        - hack/dev/csi-xenorchestra-node-single.yaml
   controller:
-    kubectl:
-      manifests:
-        - deploy/csi-xenorchestra-controller-dev.yaml
+    helm:
+      chart:
+        path: ./charts/xenorchestra-csi-driver
+      releaseName: csi-xenorchestra-dev-controller
+      valuesFiles:
+        - hack/dev/values-controller.yaml
 
 # This is a list of `dev` containers that are based on the containers created by your deployments
 dev:
@@ -46,14 +58,19 @@ dev:
     # Search for the container that runs this image
     # imageSelector: ghcr.io/vatesfr/xenorchestra-csi-driver
     # # Search for pods with this label selector
+    # `name: xenorchestra-csi-driver-single` pins the selector to the dev
+    # Deployment's pod: the base install's node DaemonSet uses the same
+    # `component`/`instance` labels but not this `name`.
     labelSelector:
-      app: csi-xenorchestra-node-single
+      app.kubernetes.io/component: node
+      app.kubernetes.io/instance: xenorchestra-csi-driver
+      app.kubernetes.io/name: xenorchestra-csi-driver-single
     # Specify the namespace where the pod is deployed
     namespace: kube-system
     # Specify which container to target when multiple containers are found
     container: xenorchestra-csi-driver
     # Replace the container image with this dev-optimized image (allows to skip image building during development)
-    devImage: golang:1.26.1-trixie
+    devImage: golang:1.26.8-trixie
     workingDir: /app
     # Remove security context to run as root
     # patches:
@@ -67,11 +84,11 @@ dev:
         # - path: "${DEVSPACE_USER_HOME}/.gitconfig:/root/.gitconfig"
         #   file: true
         #   disableDownload: true
-        # Open a terminal and use the following command to start it
+    # Open a terminal and use the following command to start it
     terminal:
       # command: ./devspace_start.sh
       command: "bash"
-    # Inject a lightweight SSH server into the container (so your IDE can connect to the remote dev env)
+    # Inject a lightweight SSH server into the dev container (so your IDE can connect to the remote dev env)
     ssh:
       enabled: true
       localHostname: node.devspace
@@ -89,11 +106,14 @@ dev:
       - port: "2345"
 
   controller:
+    # `instance` pins the selector to the dev release's pod (the base install
+    # runs its own controller with the same `component` label).
     labelSelector:
-      app: csi-xenorchestra-controller
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: csi-xenorchestra-dev-controller
     namespace: kube-system
     container: xenorchestra-csi-driver
-    devImage: golang:1.26.5-trixie
+    devImage: golang:1.26.8-trixie
     workingDir: /app
     sync:
       # - path: ./bin/:/app/bin
@@ -114,7 +134,7 @@ dev:
         value: "${VDI_NAME_PREFIX}"
     ports:
       - port: "2345"
-# Use the `commands` section to define repeatable dev workflows for this project 
+# Use the `commands` section to define repeatable dev workflows for this project
 commands:
   dev-controller:
     command: |-
@@ -123,7 +143,7 @@ commands:
 hooks:
   - name: "install required packages"
     container:
-      imageSelector: golang:1.26.1-trixie
+      imageSelector: golang:1.26.8-trixie
       once: true
     command: "go install github.com/go-delve/delve/cmd/dlv@latest"
     events: [ "devCommand:before:sync" ]

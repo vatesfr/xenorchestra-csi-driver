@@ -1,0 +1,183 @@
+---
+# Source: xenorchestra-csi-driver/templates/serviceaccounts.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: xenorchestra-csi-driver-node
+  namespace: kube-system
+  labels:
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.1
+    app.kubernetes.io/name: xenorchestra-csi-driver
+    app.kubernetes.io/instance: xenorchestra-csi-driver
+    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+---
+# Source: xenorchestra-csi-driver/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: xenorchestra-csi-driver-node
+  labels:
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.1
+    app.kubernetes.io/name: xenorchestra-csi-driver
+    app.kubernetes.io/instance: xenorchestra-csi-driver
+    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+# Source: xenorchestra-csi-driver/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: xenorchestra-csi-driver-node
+  labels:
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.1
+    app.kubernetes.io/name: xenorchestra-csi-driver
+    app.kubernetes.io/instance: xenorchestra-csi-driver
+    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+subjects:
+  - kind: ServiceAccount
+    name: xenorchestra-csi-driver-node
+    namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: xenorchestra-csi-driver-node
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: xenorchestra-csi-driver-node-single
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: xenorchestra-csi-driver-single
+    app.kubernetes.io/instance: xenorchestra-csi-driver
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/component: node
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xenorchestra-csi-driver-single
+      app.kubernetes.io/instance: xenorchestra-csi-driver
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xenorchestra-csi-driver-single
+        app.kubernetes.io/instance: xenorchestra-csi-driver
+        app.kubernetes.io/component: node
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: xenorchestra-csi-driver-node
+      hostNetwork: false
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-node-critical
+      containers:
+        - name: liveness-probe
+          image: "registry.k8s.io/sig-storage/livenessprobe:v2.18.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=/csi/csi.sock
+            - --http-endpoint=:29603
+            - --v=2
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: node-driver-registrar
+          image: "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.16.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=/csi/csi.sock
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.xenorchestra.vates.tech/csi.sock
+            - --v=5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: xenorchestra-csi-driver
+          image: "ghcr.io/vatesfr/xenorchestra-csi-driver:edge"
+          imagePullPolicy: Always
+          args:
+            - --v=5
+            - --mode=node
+            - --endpoint=unix:///csi/csi.sock
+            - --node-name=$(KUBE_NODE_NAME)
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: healthz
+              containerPort: 29603
+            - name: metrics
+              containerPort: 29605
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+          securityContext:
+            privileged: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: mountpoint-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: Bidirectional
+            - name: device-dir
+              mountPath: /dev
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      volumes:
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.xenorchestra.vates.tech
+            type: DirectoryOrCreate
+        - name: mountpoint-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: DirectoryOrCreate
+        - name: device-dir
+          hostPath:
+            path: /dev
+            type: Directory

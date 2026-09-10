@@ -35,7 +35,7 @@ connectivity to the XO API, and the required CCM).
 - [Installation with static deployment files](docs/install-static.md) – apply the pre-rendered manifests with `kubectl`.
 - [Usage and Examples](docs/usage.md) – provisioning modes, StorageClasses, dynamic and static examples, VAC migration, and the driver parameters reference.
 - [Topology and Placement](docs/topology.md) – pool boundary, live migration behaviour, CCM dependency.
-- [Developer guide](docs/development.md) – build, `kxo` helper, DevSpace, MicroK8s registry, remote debugging.
+- [Developer guide](docs/development.md) – build, Helm deployment, DevSpace, MicroK8s registry, remote debugging.
 - [Reference: Volume Handle and Volume ID in v0.3.0](docs/references/volume-handle-and-volume-id-v0.3.0.md) – details about stable CSI identity semantics.
 - [Reference: VDI Lookup and Identification](docs/references/vdi-lookup-and-identification.md) – how VDIs are located, tag-based lookup, fallback behaviour, and limitations.
 - [Reference: Local Storage: VDI Placement and Migration](docs/references/local-storage.md) – SR selection, VDI migration, idempotency, and VM live-migration behaviour.
