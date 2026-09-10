@@ -18,6 +18,8 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"slices"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -428,12 +430,20 @@ func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.
 		return nil, err
 	}
 
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})))
+
 	vdiID, volumeID, err := driver.xoClient.CreateNewVolume(ctx, sr.ID, driver.vdiNamePrefix, capacityBytes, volumeName, driver.Name+"@"+driver.Version, driver.clusterTag)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create VDI", "volumeName", volumeName, "capacityBytes", capacityBytes)
 		return nil, status.Errorf(codes.Internal, "Failed to create VDI: %v", err)
 	}
 	klog.V(5).InfoS("VDI created", "vdiID", vdiID, "volumeID", volumeID, "volumeName", volumeName)
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
