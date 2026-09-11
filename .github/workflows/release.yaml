@@ -23,23 +23,35 @@ jobs:
       - name: Validate release
         shell: bash
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo "Invalid release tag: $GITHUB_REF_NAME"
+          tag="$GITHUB_REF_NAME"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$tag" =~ $semver ]]; then
+            echo "Invalid release tag: $tag"
             exit 1
           fi
 
           # Release commits must belong to the main branch.
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*$ ]]; then
-            echo "CHART_ONLY=true" >> "$GITHUB_ENV"
-            expected_app_version="${GITHUB_REF_NAME%-*}"
-          else
-            echo "CHART_ONLY=false" >> "$GITHUB_ENV"
-            expected_app_version="$GITHUB_REF_NAME"
+          app_version="$(sed -n 's/^appVersion: //p' charts/xenorchestra-csi-driver/Chart.yaml)"
+          if [ -z "$app_version" ]; then
+            echo "No appVersion found in charts/xenorchestra-csi-driver/Chart.yaml"
+            exit 1
           fi
 
-          app_version="$(sed -n 's/^appVersion: //p' charts/xenorchestra-csi-driver/Chart.yaml)"
+          # Chart-only tags are <app version>-N (e.g. v1.0.0-1 or v1.0.0-rc.1-2):
+          # the base must equal the chart's appVersion. Tags shaped like an app
+          # prerelease vX.Y.Z-<word>.<number> (e.g. v1.0.0-rc.1) are app releases.
+          if [[ "$tag" =~ ^v.+-[1-9][0-9]*$ ]] \
+            && [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+\.[0-9]+$ ]] \
+            && [[ "${tag%-*}" == "$app_version" ]]; then
+            echo "CHART_ONLY=true" >> "$GITHUB_ENV"
+            expected_app_version="${tag%-*}"
+          else
+            echo "CHART_ONLY=false" >> "$GITHUB_ENV"
+            expected_app_version="$tag"
+          fi
+
           if [ "$app_version" != "$expected_app_version" ]; then
             echo "Chart appVersion ($app_version) must match the application version ($expected_app_version)"
             exit 1

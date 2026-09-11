@@ -12,7 +12,7 @@ Each release is triggered by a Git tag and publishes the driver image and/or the
 
 The chart version is **decoupled** from the app version: it follows its own semver. The chart's `appVersion` is the version of the driver deployed by default (`image.tag` is empty by default, so the deployment uses `appVersion` as the image tag; users can override with `--set image.tag=...`).
 
-Application prereleases use the standard SemVer form, for example `v1.0.0-rc.1`. A prerelease tag publishes both the image and the chart; only a positive numeric suffix such as `v1.0.0-1` denotes a chart-only release.
+Application prereleases use the standard SemVer form, for example `v1.0.0-rc.1`. A prerelease tag publishes both the image and the chart; a positive numeric suffix such as `v1.0.0-1` (or `v1.0.0-rc.1-2` on top of a prerelease) denotes a chart-only release.
 
 ## Chart version bump
 
@@ -66,7 +66,7 @@ Only `charts/**` changes, the application is unchanged.
    make docs
    ```
 
-3. Merge into `main`, then tag with `N`, the next unused increment for the current app version:
+3. Merge into `main`, then tag with `N`, the next unused increment for the current app version (the app version is the chart's `appVersion`, including prereleases):
 
    ```shell
    git tag v<app>-N
@@ -84,3 +84,5 @@ Conditions:
 > Example (current state): app `v0.4.0` is already released, the chart `version` is `0.4.1` (a chart fix is pending). Tag `v0.4.0-1` publishes chart `0.4.1` without touching the image.
 >
 > Example: after the app release `v0.5.0` (case 1), a chart bugfix → bump `version`, tag `v0.5.0-1`.
+>
+> Example: app `v1.0.0-rc.1` is released (chart `version` `1.0.0-rc.1`), a chart fix → bump `version` to `1.0.0-rc.2`, tag `v1.0.0-rc.1-2`.
