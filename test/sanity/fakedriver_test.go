@@ -120,7 +120,7 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 		ID:     uuid.Must(uuid.NewV4()),
 		Device: &device,
 	}, nil).AnyTimes()
-	mockXoClient.EXPECT().DisconnectVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockXoClient.EXPECT().RemoveVBDFromVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockXoClient.EXPECT().FindLocalSRForHost(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
 		localSR := payloads.StorageRepository{
 			ID:        uuid.FromStringOrNil(stub.LocalSRId),

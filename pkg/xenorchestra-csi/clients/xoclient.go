@@ -37,7 +37,7 @@ type XoClient interface {
 	library.Library
 	GetVBDFromVDIAndVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
 	ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloads.VBD, error)
-	DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
+	RemoveVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error
 	AttachVDIToVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) (*payloads.VBD, error)
 	CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefix string, capacityBytes int64, volumeName string, managedBy string, clusterTag string) (uuid.UUID, uuid.UUID, error)
 	WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error)
@@ -253,21 +253,17 @@ func (c xoClient) IsSRAttachedToVMHost(ctx context.Context, vbdID uuid.UUID) err
 	return c.IsSRAttachedToHost(ctx, vdi.SR, vm.Container)
 }
 
-func (c xoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
+func (c xoClient) RemoveVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
 	vbd, err := c.GetVBDFromVDIAndVM(ctx, vdi, vmUUID)
 	if err != nil {
 		return err
 	}
-	taskID, err := c.VBD().Disconnect(ctx, vbd.ID)
+	err = c.VBD().Delete(ctx, vbd.ID)
 	if err != nil {
-		klog.ErrorS(err, "Failed to disconnect VBD from the node", "vbdID", vbd.ID)
+		klog.ErrorS(err, "Failed to delete VBD from the node", "vbdID", vbd.ID)
 		return err
 	}
-	task, err := c.Task().Wait(ctx, taskID)
-	if err != nil {
-		klog.ErrorS(err, "Failed to wait for task to complete", "taskID", taskID, "taskResult", task.Result)
-	}
-	return err
+	return nil
 }
 
 func (c xoClient) GetVDIByVolumeId(ctx context.Context, volumeId string) (*payloads.VDI, error) {

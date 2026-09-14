@@ -345,16 +345,16 @@ func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Conte
 		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeId, err)
 	}
 
-	err = driver.xoClient.DisconnectVBDFromVM(ctx, *vdi, vmUUID)
+	err = driver.xoClient.RemoveVBDFromVM(ctx, *vdi, vmUUID)
 	if err != nil {
 		// Ignore not found errors as the VBD may have already been detached
 		if !errors.Is(err, clients.ErrVBDNotFound) {
-			klog.ErrorS(err, "Failed to detach VDI from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
-			return nil, status.Errorf(codes.Internal, "Failed to detach VDI from VM: %v", err)
+			klog.ErrorS(err, "Failed to remove VBD from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
+			return nil, status.Errorf(codes.Internal, "Failed to remove VBD from VM: %v", err)
 		}
-		klog.V(5).InfoS("VBD not found, already detached", "vdiID", vdi.ID, "vmUUID", vmUUID)
+		klog.V(5).InfoS("VBD not found, already removed", "vdiID", vdi.ID, "vmUUID", vmUUID)
 	}
-	klog.V(5).InfoS("VBD disconnected from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
+	klog.V(5).InfoS("VBD removed from VM", "vdiID", vdi.ID, "vmUUID", vmUUID)
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
