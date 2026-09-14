@@ -90,20 +90,6 @@ func (mr *MockXoClientMockRecorder) CreateNewVolume(ctx, srID, namePrefix, capac
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNewVolume", reflect.TypeOf((*MockXoClient)(nil).CreateNewVolume), ctx, srID, namePrefix, capacityBytes, volumeName, managedBy, clusterTag)
 }
 
-// DisconnectVBDFromVM mocks base method.
-func (m *MockXoClient) DisconnectVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DisconnectVBDFromVM", ctx, vdi, vmUUID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DisconnectVBDFromVM indicates an expected call of DisconnectVBDFromVM.
-func (mr *MockXoClientMockRecorder) DisconnectVBDFromVM(ctx, vdi, vmUUID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisconnectVBDFromVM", reflect.TypeOf((*MockXoClient)(nil).DisconnectVBDFromVM), ctx, vdi, vmUUID)
-}
-
 // FindLocalSRForHost mocks base method.
 func (m *MockXoClient) FindLocalSRForHost(ctx context.Context, hostID uuid.UUID) (*payloads.StorageRepository, error) {
 	m.ctrl.T.Helper()
@@ -292,6 +278,20 @@ func (m *MockXoClient) Pool() library.Pool {
 func (mr *MockXoClientMockRecorder) Pool() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Pool", reflect.TypeOf((*MockXoClient)(nil).Pool))
+}
+
+// RemoveVBDFromVM mocks base method.
+func (m *MockXoClient) RemoveVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveVBDFromVM", ctx, vdi, vmUUID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveVBDFromVM indicates an expected call of RemoveVBDFromVM.
+func (mr *MockXoClientMockRecorder) RemoveVBDFromVM(ctx, vdi, vmUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveVBDFromVM", reflect.TypeOf((*MockXoClient)(nil).RemoveVBDFromVM), ctx, vdi, vmUUID)
 }
 
 // SR mocks base method.
