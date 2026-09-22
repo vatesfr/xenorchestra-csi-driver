@@ -38,11 +38,13 @@ type stubLibrary struct {
 	library.Library
 	sr   library.SR
 	vdi  library.VDI
+	vbd  library.VBD
 	task library.Task
 }
 
 func (s stubLibrary) SR() library.SR        { return s.sr }
 func (s stubLibrary) VDI() library.VDI      { return s.vdi }
+func (s stubLibrary) VBD() library.VBD      { return s.vbd }
 func (s stubLibrary) Task() library.Task    { return s.task }
 func (s stubLibrary) V1Client() v1.XOClient { panic("V1Client not expected in this test") }
 
@@ -82,6 +84,15 @@ func newClientWithMockVDIAndTask(t *testing.T) (*xoClient, *xoLibMock.MockVDI, *
 	mockTask := xoLibMock.NewMockTask(ctrl)
 	c := xoClient{Library: stubLibrary{vdi: mockVDI, task: mockTask}}
 	return &c, mockVDI, mockTask
+}
+
+func newClientWithMockVBDAndTask(t *testing.T) (*xoClient, *xoLibMock.MockVBD, *xoLibMock.MockTask) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	mockVBD := xoLibMock.NewMockVBD(ctrl)
+	mockTask := xoLibMock.NewMockTask(ctrl)
+	c := xoClient{Library: stubLibrary{vbd: mockVBD, task: mockTask}}
+	return &c, mockVBD, mockTask
 }
 
 func expectedLocalSRFilter(hostID uuid.UUID) string {
@@ -286,6 +297,95 @@ func TestMigrateVDIAndWait(t *testing.T) {
 		got, err := c.MigrateVDIAndWait(context.Background(), vdiWithTags, localSRID)
 		require.NoError(t, err)
 		assert.Equal(t, newVDIUUID, got)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// RemoveVBDFromVM
+// ---------------------------------------------------------------------------
+
+func TestRemoveVBDFromVM(t *testing.T) {
+	vmID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000006"))
+	vbdID := uuid.Must(uuid.FromString("11111111-0000-0000-0000-000000000007"))
+	vbdFilter := fmt.Sprintf("VDI:%s VM:%s", vdiUUID, vmID)
+
+	setup := func(t *testing.T) (*xoClient, *xoLibMock.MockVBD, *xoLibMock.MockTask) {
+		t.Helper()
+		c, mockVBD, mockTask := newClientWithMockVBDAndTask(t)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, vbdFilter).Return([]*payloads.VBD{{ID: vbdID}}, nil)
+		return c, mockVBD, mockTask
+	}
+
+	t.Run("DeletesAfterSuccessfulDisconnect", func(t *testing.T) {
+		c, mockVBD, mockTask := setup(t)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return(taskID, nil)
+		mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(&payloads.Task{Status: payloads.Success}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), vbdID).Return(nil)
+
+		err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+		require.NoError(t, err)
+	})
+
+	for _, resultCode := range []string{
+		"DEVICE_ALREADY_DETACHED",
+		"VM_BAD_POWER_STATE",
+		"VM_MISSING_PV_DRIVERS",
+	} {
+		t.Run("DeletesForToleratedDisconnectCode/"+resultCode, func(t *testing.T) {
+			c, mockVBD, mockTask := setup(t)
+			mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return(taskID, nil)
+			mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(&payloads.Task{
+				Status: payloads.Failure,
+				Result: payloads.Result{Code: resultCode, Message: "disconnect failed"},
+			}, nil)
+			mockVBD.EXPECT().Delete(gomock.Any(), vbdID).Return(nil)
+
+			err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("ReturnsErrorForUnexpectedDisconnectCode", func(t *testing.T) {
+		c, mockVBD, mockTask := setup(t)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return(taskID, nil)
+		mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(&payloads.Task{
+			Status: payloads.Failure,
+			Result: payloads.Result{Code: "UNEXPECTED", Message: "disconnect failed"},
+		}, nil)
+
+		err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "disconnect failed")
+	})
+
+	t.Run("ReturnsDisconnectError", func(t *testing.T) {
+		c, mockVBD, _ := setup(t)
+		disconnectErr := errors.New("disconnect API error")
+		mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return("", disconnectErr)
+
+		err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+		require.ErrorIs(t, err, disconnectErr)
+	})
+
+	t.Run("ReturnsWaitError", func(t *testing.T) {
+		c, mockVBD, mockTask := setup(t)
+		waitErr := errors.New("wait API error")
+		mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return(taskID, nil)
+		mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(nil, waitErr)
+
+		err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+		require.ErrorIs(t, err, waitErr)
+	})
+
+	t.Run("ReturnsDeleteError", func(t *testing.T) {
+		c, mockVBD, mockTask := setup(t)
+		deleteErr := errors.New("delete API error")
+		mockVBD.EXPECT().Disconnect(gomock.Any(), vbdID).Return(taskID, nil)
+		mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(&payloads.Task{Status: payloads.Success}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), vbdID).Return(deleteErr)
+
+		err := c.RemoveVBDFromVM(context.Background(), vdiTest, vmID)
+		require.ErrorIs(t, err, deleteErr)
 	})
 }
 

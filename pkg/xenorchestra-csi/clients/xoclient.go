@@ -258,6 +258,31 @@ func (c xoClient) RemoveVBDFromVM(ctx context.Context, vdi payloads.VDI, vmUUID 
 	if err != nil {
 		return err
 	}
+
+	// To avoid data corruption, we must first disconnect the VBD from the VM before deleting it.
+	// The disconnect operation is using the VM PV driver to safely detach the disk from the VM.
+	taskID, err := c.VBD().Disconnect(ctx, vbd.ID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to safely disconnect VBD from the node", "vbdID", vbd.ID)
+		return err
+	}
+
+	task, err := c.Task().Wait(ctx, taskID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to wait for task to complete", "taskID", taskID)
+		return err
+	}
+	if task.Status != payloads.Success {
+		klog.V(2).InfoS("Failed to disconnect VBD for reason", "message", task.Result.Message, "vbdID", vbd.ID, "taskID", taskID)
+		resultCode, ok := task.Result.Code.(string)
+
+		if !ok || (resultCode != "DEVICE_ALREADY_DETACHED" &&
+			resultCode != "VM_BAD_POWER_STATE" &&
+			resultCode != "VM_MISSING_PV_DRIVERS") {
+			return fmt.Errorf("task %s finished with status %q: %s", taskID, task.Status, task.Result.Message)
+		}
+	}
+
 	err = c.VBD().Delete(ctx, vbd.ID)
 	if err != nil {
 		klog.ErrorS(err, "Failed to delete VBD from the node", "vbdID", vbd.ID)
