@@ -16,19 +16,38 @@ limitations under the License.
 package xenorchestracsi
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 	"google.golang.org/grpc"
 
 	"k8s.io/klog/v2"
 )
 
 var stopOnce sync.Once
+
+// log is a package-level logger so the interceptor and its tests can swap the
+// destination. Default: klog.
+var log = klog.Background()
+
+// loggingInterceptor logs every incoming RPC with the request secrets
+// stripped (CSI spec: "the CO and SP MUST NOT log secret values").
+// Per-handler request logging is forbidden by golangci-lint (forbidigo) — use this.
+func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	start := time.Now()
+	// "request" key is safe here: the value is sanitized (nolint for the interceptor itself)
+	log.V(5).Info(info.FullMethod, "request", protosanitizer.StripSecrets(req)) //nolint:forbidigo
+	resp, err := handler(ctx, req)
+	log.V(5).Info(info.FullMethod, "error", err, "duration", time.Since(start).String())
+	return resp, err
+}
 
 // NonBlockingGRPCServer defines non-blocking GRPC server interfaces.
 type NonBlockingGRPCServer interface {
@@ -115,7 +134,7 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer,
 		return err
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(loggingInterceptor))
 	s.server = server
 
 	// Register the CSI services.

@@ -31,8 +31,6 @@ import (
 
 // NodeGetCapabilities implements Driver.
 func (driver *xenorchestraCSIDriver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	klog.V(5).InfoS("NodeGetCapabilities called", "request", req)
-
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: []*csi.NodeServiceCapability{
 			{
@@ -49,7 +47,6 @@ func (driver *xenorchestraCSIDriver) NodeGetCapabilities(ctx context.Context, re
 
 // NodeGetInfo implements Driver.
 func (driver *xenorchestraCSIDriver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	klog.V(5).InfoS("NodeGetInfo called", "request", req)
 	metadata, err := driver.nodeMetadata.GetNodeMetadata()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to fetch node metadata: %v", err)
@@ -69,7 +66,6 @@ func (driver *xenorchestraCSIDriver) NodeGetInfo(ctx context.Context, req *csi.N
 
 // NodePublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-	klog.V(5).InfoS("NodePublishVolume called", "request", req)
 	// Check arguments
 	volCap := req.GetVolumeCapability()
 	if volCap == nil {
@@ -155,8 +151,6 @@ func (driver *xenorchestraCSIDriver) NodePublishVolume(ctx context.Context, req 
 
 // NodeUnpublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	klog.V(5).Info("NodeUnpublishVolume called", "request", req)
-
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -190,8 +184,6 @@ func (driver *xenorchestraCSIDriver) NodeExpandVolume(context.Context, *csi.Node
 
 // NodeStageVolume implements Driver.
 func (driver *xenorchestraCSIDriver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	klog.V(5).Info("NodeStageVolume called", "request", req)
-
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -253,7 +245,6 @@ func (driver *xenorchestraCSIDriver) NodeStageVolume(ctx context.Context, req *c
 
 // NodeUnstageVolume implements Driver.
 func (driver *xenorchestraCSIDriver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	klog.V(5).Info("NodeUnstageVolume called", "request", req)
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
