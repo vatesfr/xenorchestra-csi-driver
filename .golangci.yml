@@ -10,6 +10,7 @@ run:
   tests: true
 linters:
   enable:
+    - forbidigo
     - goconst
     - gosec
     - lll
@@ -17,6 +18,13 @@ linters:
     - nakedret
     - unconvert
   settings:
+    forbidigo:
+      forbid:
+        # Raw CSI requests carry a `secrets` map — logging them leaks credentials
+        # (CSI spec: "the CO and SP MUST NOT log secret values").
+        # Use the loggingInterceptor in server.go, which strips secrets.
+        - pattern: '"request"'
+          msg: "never log raw CSI requests (secrets leak) — use the loggingInterceptor in server.go"
     govet:
       disable:
         - structtag
