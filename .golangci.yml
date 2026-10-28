@@ -11,12 +11,22 @@ run:
 linters:
   enable:
     - goconst
+    - gocritic
     - gosec
     - lll
     - misspell
     - nakedret
     - unconvert
   settings:
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          # Raw CSI requests carry a `secrets` map — logging them leaks credentials.
+          rules: "${base-path}/hack/ruleguard/rules.go"
+          failOn: all
     govet:
       disable:
         - structtag
