@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -40,6 +41,14 @@ func (driver *xenorchestraCSIDriver) NodeGetCapabilities(ctx context.Context, re
 				Type: &csi.NodeServiceCapability_Rpc{
 					Rpc: &csi.NodeServiceCapability_RPC{
 						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+					},
+				},
+			},
+			{
+				// Lets the kubelet report the usage of the volumes (kubelet_volume_stats_* metrics)
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 					},
 				},
 			},
@@ -177,9 +186,57 @@ func (driver *xenorchestraCSIDriver) NodeUnpublishVolume(ctx context.Context, re
 }
 
 // NodeGetVolumeStats implements Driver.
-func (driver *xenorchestraCSIDriver) NodeGetVolumeStats(context.Context, *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	klog.Error("NodeGetVolumeStats is not implemented")
-	return nil, status.Error(codes.Unimplemented, "NodeGetVolumeStats is not implemented")
+// It reports the usage (bytes and inodes) of the filesystem mounted at the volume path. Only
+// filesystem volumes are supported (see NodePublishVolume).
+func (driver *xenorchestraCSIDriver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	klog.V(5).InfoS("NodeGetVolumeStats called", "request", req)
+
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
+	}
+	volumePath := req.GetVolumePath()
+	if len(volumePath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "volume path missing in request")
+	}
+
+	if _, err := os.Stat(volumePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Errorf(codes.NotFound, "volume path %s does not exist", volumePath)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to stat volume path %s: %v", volumePath, err)
+	}
+
+	usage, err := filesystemUsage(volumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get the filesystem usage of %s: %v", volumePath, err)
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{Usage: usage}, nil
+}
+
+// filesystemUsage returns the bytes and inodes (total, used, available) of the filesystem
+// holding path.
+func filesystemUsage(path string) ([]*csi.VolumeUsage, error) {
+	var statfs unix.Statfs_t
+	if err := unix.Statfs(path, &statfs); err != nil {
+		return nil, err
+	}
+
+	blockSize := uint64(statfs.Bsize) //nolint:gosec // a block size is never negative
+	return []*csi.VolumeUsage{
+		{
+			Unit:      csi.VolumeUsage_BYTES,
+			Total:     int64(statfs.Blocks * blockSize),                  //nolint:gosec // fits in int64
+			Used:      int64((statfs.Blocks - statfs.Bfree) * blockSize), //nolint:gosec // fits in int64
+			Available: int64(statfs.Bavail * blockSize),                  //nolint:gosec // fits in int64
+		},
+		{
+			Unit:      csi.VolumeUsage_INODES,
+			Total:     int64(statfs.Files),                //nolint:gosec // fits in int64
+			Used:      int64(statfs.Files - statfs.Ffree), //nolint:gosec // fits in int64
+			Available: int64(statfs.Ffree),                //nolint:gosec // fits in int64
+		},
+	}, nil
 }
 
 // NodeExpandVolume implements Driver.
