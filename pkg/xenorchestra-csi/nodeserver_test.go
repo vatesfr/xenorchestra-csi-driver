@@ -16,6 +16,8 @@ limitations under the License.
 package xenorchestracsi
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -24,6 +26,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
 )
 
 // ---------------------------------------------------------------------------
@@ -84,4 +88,126 @@ func TestNodeGetVolumeStats(t *testing.T) {
 			assert.Equal(t, tt.code, status.Code(err))
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// NodeGetVolumeHealth
+// ---------------------------------------------------------------------------
+
+// fakeMounter answers IsMountPoint from a set of mount points; the other methods are not used.
+type fakeMounter struct {
+	clients.Mounter
+	mountPoints map[string]bool
+	err         error
+}
+
+func (m *fakeMounter) IsMountPoint(target string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	if _, err := os.Stat(target); err != nil {
+		return false, err
+	}
+	return m.mountPoints[target], nil
+}
+
+func TestNodeGetVolumeHealth(t *testing.T) {
+	staging := t.TempDir()
+	publish := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	health := func(t *testing.T, mounter *fakeMounter, req *csi.NodeGetVolumeHealthRequest) []*csi.VolumeHealth_VolumeHealthEntry {
+		t.Helper()
+		driver := &xenorchestraCSIDriver{mounter: mounter}
+		resp, err := driver.NodeGetVolumeHealth(t.Context(), req)
+		require.NoError(t, err)
+		assert.Equal(t, testVolumeID, resp.GetVolumeHealth().GetVolumeId())
+		return resp.GetVolumeHealth().GetHealthStatuses()
+	}
+	bothMounted := &fakeMounter{mountPoints: map[string]bool{staging: true, publish: true}}
+
+	t.Run("healthy: both paths mounted, their filesystem answers", func(t *testing.T) {
+		statuses := health(t, bothMounted, &csi.NodeGetVolumeHealthRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: staging,
+			VolumePublishPath: publish,
+		})
+		assert.Empty(t, statuses)
+	})
+
+	t.Run("no path: nothing known about the volume on the node", func(t *testing.T) {
+		assert.Empty(t, health(t, bothMounted, &csi.NodeGetVolumeHealthRequest{VolumeId: testVolumeID}))
+	})
+
+	tests := []struct {
+		name    string
+		mounter *fakeMounter
+		req     *csi.NodeGetVolumeHealthRequest
+		reason  string
+		message string
+	}{
+		{
+			name:    "publish path not mounted",
+			mounter: &fakeMounter{mountPoints: map[string]bool{staging: true}},
+			req: &csi.NodeGetVolumeHealthRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: staging,
+				VolumePublishPath: publish,
+			},
+			reason:  VolumeHealthReasonNotMounted,
+			message: publish + " is not a mount point",
+		},
+		{
+			name:    "staging path not mounted: reported once, before the publish path",
+			mounter: &fakeMounter{mountPoints: map[string]bool{}},
+			req: &csi.NodeGetVolumeHealthRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: staging,
+				VolumePublishPath: publish,
+			},
+			reason:  VolumeHealthReasonNotMounted,
+			message: staging + " is not a mount point",
+		},
+		{
+			name:    "path that does not exist",
+			mounter: bothMounted,
+			req:     &csi.NodeGetVolumeHealthRequest{VolumeId: testVolumeID, VolumePublishPath: missing},
+			reason:  VolumeHealthReasonNotMounted,
+			message: missing + " does not exist",
+		},
+		{
+			name:    "mount point check failing",
+			mounter: &fakeMounter{err: errors.New("input/output error")},
+			req:     &csi.NodeGetVolumeHealthRequest{VolumeId: testVolumeID, VolumePublishPath: publish},
+			reason:  VolumeHealthReasonFilesystemError,
+			message: "failed to check the mount point " + publish + ": input/output error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			statuses := health(t, tt.mounter, tt.req)
+			require.Len(t, statuses, 1)
+			assert.Equal(t, csi.VolumeHealthErrorType_INACCESSIBLE, statuses[0].GetStatus())
+			assert.Equal(t, tt.reason, statuses[0].GetReason())
+			assert.Equal(t, tt.message, statuses[0].GetMessage())
+		})
+	}
+
+	t.Run("volume ID missing", func(t *testing.T) {
+		driver := &xenorchestraCSIDriver{mounter: bothMounted}
+		_, err := driver.NodeGetVolumeHealth(t.Context(), &csi.NodeGetVolumeHealthRequest{VolumePublishPath: publish})
+		assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+}
+
+func TestNodeGetCapabilitiesVolumeHealth(t *testing.T) {
+	resp, err := (&xenorchestraCSIDriver{}).NodeGetCapabilities(t.Context(), &csi.NodeGetCapabilitiesRequest{})
+	require.NoError(t, err)
+
+	var types []csi.NodeServiceCapability_RPC_Type
+	for _, c := range resp.GetCapabilities() {
+		types = append(types, c.GetRpc().GetType())
+	}
+	assert.Contains(t, types, csi.NodeServiceCapability_RPC_GET_VOLUME_STATS)
+	assert.Contains(t, types, csi.NodeServiceCapability_RPC_GET_VOLUME_HEALTH)
 }

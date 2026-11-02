@@ -78,4 +78,12 @@ const (
 	// specifies the target Storage Repository (SR) UUID for VDI migration.
 	// The target SR must be in the same pool as the current VDI.
 	ParameterStorageRepository = "storageRepositoryId"
+
+	// VolumeHealthReasonNotMounted is the reason of NodeGetVolumeHealth when the staging or
+	// publish path of a volume is not mounted: its filesystem is not available to its pods.
+	VolumeHealthReasonNotMounted = "NotMounted"
+
+	// VolumeHealthReasonFilesystemError is the reason of NodeGetVolumeHealth when the
+	// filesystem of a volume does not answer (I/O error).
+	VolumeHealthReasonFilesystemError = "FilesystemError"
 )
