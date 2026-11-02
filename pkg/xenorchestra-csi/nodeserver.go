@@ -17,10 +17,12 @@ package xenorchestracsi
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -40,6 +42,22 @@ func (driver *xenorchestraCSIDriver) NodeGetCapabilities(ctx context.Context, re
 				Type: &csi.NodeServiceCapability_Rpc{
 					Rpc: &csi.NodeServiceCapability_RPC{
 						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+					},
+				},
+			},
+			{
+				// Lets the kubelet report the usage of the volumes (kubelet_volume_stats_* metrics)
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+					},
+				},
+			},
+			{
+				// Lets the CO report the volumes that are no longer usable on the node (alpha)
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_HEALTH,
 					},
 				},
 			},
@@ -177,9 +195,113 @@ func (driver *xenorchestraCSIDriver) NodeUnpublishVolume(ctx context.Context, re
 }
 
 // NodeGetVolumeStats implements Driver.
-func (driver *xenorchestraCSIDriver) NodeGetVolumeStats(context.Context, *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	klog.Error("NodeGetVolumeStats is not implemented")
-	return nil, status.Error(codes.Unimplemented, "NodeGetVolumeStats is not implemented")
+// It reports the usage (bytes and inodes) of the filesystem mounted at the volume path. Only
+// filesystem volumes are supported (see NodePublishVolume).
+func (driver *xenorchestraCSIDriver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	klog.V(5).InfoS("NodeGetVolumeStats called", "request", req)
+
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
+	}
+	volumePath := req.GetVolumePath()
+	if len(volumePath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "volume path missing in request")
+	}
+
+	if _, err := os.Stat(volumePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Errorf(codes.NotFound, "volume path %s does not exist", volumePath)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to stat volume path %s: %v", volumePath, err)
+	}
+
+	usage, err := filesystemUsage(volumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get the filesystem usage of %s: %v", volumePath, err)
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{Usage: usage}, nil
+}
+
+// filesystemUsage returns the bytes and inodes (total, used, available) of the filesystem
+// holding path.
+func filesystemUsage(path string) ([]*csi.VolumeUsage, error) {
+	var statfs unix.Statfs_t
+	if err := unix.Statfs(path, &statfs); err != nil {
+		return nil, err
+	}
+
+	blockSize := uint64(statfs.Bsize) //nolint:gosec // a block size is never negative
+	return []*csi.VolumeUsage{
+		{
+			Unit:      csi.VolumeUsage_BYTES,
+			Total:     int64(statfs.Blocks * blockSize),                  //nolint:gosec // fits in int64
+			Used:      int64((statfs.Blocks - statfs.Bfree) * blockSize), //nolint:gosec // fits in int64
+			Available: int64(statfs.Bavail * blockSize),                  //nolint:gosec // fits in int64
+		},
+		{
+			Unit:      csi.VolumeUsage_INODES,
+			Total:     int64(statfs.Files),                //nolint:gosec // fits in int64
+			Used:      int64(statfs.Files - statfs.Ffree), //nolint:gosec // fits in int64
+			Available: int64(statfs.Ffree),                //nolint:gosec // fits in int64
+		},
+	}, nil
+}
+
+// NodeGetVolumeHealth implements Driver: the health of a volume from the node, where its pods
+// use it. The volume is inaccessible when its staging or publish path is not mounted (the
+// filesystem of the VDI is gone, e.g. the VDI was unplugged or the mount removed), or when its
+// filesystem does not answer (an I/O error: the VDI is no longer readable). The staging path is
+// checked first: the publish path is a bind mount of it, a problem of the staging path is
+// reported once.
+func (driver *xenorchestraCSIDriver) NodeGetVolumeHealth(ctx context.Context, req *csi.NodeGetVolumeHealthRequest) (*csi.NodeGetVolumeHealthResponse, error) {
+	klog.V(5).InfoS("NodeGetVolumeHealth called", "request", req)
+
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
+	}
+
+	health := &csi.VolumeHealth{VolumeId: req.GetVolumeId()}
+	for _, path := range []string{req.GetStagingTargetPath(), req.GetVolumePublishPath()} {
+		if len(path) == 0 {
+			continue
+		}
+		if entry := driver.mountHealth(path); entry != nil {
+			health.HealthStatuses = []*csi.VolumeHealth_VolumeHealthEntry{entry}
+			break
+		}
+	}
+
+	return &csi.NodeGetVolumeHealthResponse{VolumeHealth: health}, nil
+}
+
+// mountHealth returns the health problem of the filesystem of a volume mounted at path, or
+// nil when it is mounted and answers.
+func (driver *xenorchestraCSIDriver) mountHealth(path string) *csi.VolumeHealth_VolumeHealthEntry {
+	inaccessible := func(reason, format string, args ...any) *csi.VolumeHealth_VolumeHealthEntry {
+		return &csi.VolumeHealth_VolumeHealthEntry{
+			Status:  csi.VolumeHealthErrorType_INACCESSIBLE,
+			Reason:  reason,
+			Message: fmt.Sprintf(format, args...),
+		}
+	}
+
+	mounted, err := driver.mounter.IsMountPoint(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return inaccessible(VolumeHealthReasonNotMounted, "%s does not exist", path)
+		}
+		return inaccessible(VolumeHealthReasonFilesystemError, "failed to check the mount point %s: %v", path, err)
+	}
+	if !mounted {
+		return inaccessible(VolumeHealthReasonNotMounted, "%s is not a mount point", path)
+	}
+
+	var statfs unix.Statfs_t
+	if err := unix.Statfs(path, &statfs); err != nil {
+		return inaccessible(VolumeHealthReasonFilesystemError, "the filesystem mounted at %s does not answer: %v", path, err)
+	}
+	return nil
 }
 
 // NodeExpandVolume implements Driver.
