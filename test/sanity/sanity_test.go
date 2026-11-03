@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	xenorchestracsi "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi"
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/fake"
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
 )
 
@@ -24,11 +25,16 @@ const (
 	sockPath       = "/tmp/xenorchestra-csi-sanity-test.sock"
 )
 
+// checkMountLeaks makes every spec fail when it leaves mounts behind. It stays
+// off until NodeStageVolume is idempotent: repeated NodeStageVolume calls
+// stack mounts that NodeUnstageVolume does not remove.
+const checkMountLeaks = false
+
 type CustomIDGenerator struct{}
 
 var (
 	_           sanity.IDGenerator = &CustomIDGenerator{}
-	fakeMounter *FakeMounter
+	fakeMounter *fake.Mounter
 	tmpDir      string
 )
 
@@ -49,7 +55,7 @@ func (d CustomIDGenerator) GenerateInvalidNodeID() string {
 }
 
 func TestSanity(t *testing.T) {
-	fakeMounter = NewFakeMounter()
+	fakeMounter = fake.NewMounter()
 	// Start the driver in-process with stub dependencies (no real k8s/XO required).
 	driver, _ := NewFakeDriver(
 		t,
@@ -110,29 +116,27 @@ func buildBaseTestConfig() *sanity.TestConfig {
 	cfg.TargetPath = path.Join(tmpDir, "mount")
 	cfg.StagingPath = path.Join(tmpDir, "staging")
 
-	// Use the fake mounter's methods to simulate filesystem operations in memory,
-	// allowing sanity tests to run without real mounts.
-	cfg.CheckPath = func(path string) (sanity.PathKind, error) {
-		return fakeMounter.CheckPath(path)
-	}
-	cfg.CreateTargetDir = func(path string) (string, error) {
-		return path, fakeMounter.Mount("", path, "", nil)
-	}
-	cfg.CreateStagingDir = func(path string) (string, error) {
-		return path, fakeMounter.Mount("", path, "", nil)
-	}
-	cfg.RemoveStagingPath = func(path string) error {
-		return fakeMounter.Unmount(path)
-	}
-	cfg.RemoveTargetPath = func(path string) error {
-		return fakeMounter.Unmount(path)
-	}
+	// Target and staging directories are real directories under tmpDir, created
+	// and checked by the csi-sanity defaults; only mounts are faked.
 
 	return &cfg
 }
 
 // Describe here the sanity test suite(s) to run.
 var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
+	// Every spec must unmount what it mounted.
+	var mountsBefore int
+	ginkgo.BeforeEach(func() {
+		mountsBefore = len(fakeMounter.Entries())
+	})
+	ginkgo.AfterEach(func() {
+		if !checkMountLeaks {
+			return
+		}
+		entries := fakeMounter.Entries()
+		gomega.Expect(entries).To(gomega.HaveLen(mountsBefore), "mounts left behind: %v", entries[min(mountsBefore, len(entries)):])
+	})
+
 	// The explicit pool suite runs all sanity tests with a fixed poolId parameter.
 	ginkgo.Describe("Sanity explicit pool", func() {
 		cfg := buildBaseTestConfig()
@@ -178,7 +182,7 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 	})
 
 	// The volume mutable parameters suite runs sanity tests with a fixed storage repository parameter, which is required for volume expansion and other mutable operations.
-	ginkgo.Describe("Sanity VolumeMutableParameters", func() {
+	ginkgo.Describe("Sanity VolumeMutableParameters default parameters", func() {
 		cfg := buildBaseTestConfig()
 		cfg.TestVolumeMutableParameters = map[string]string{
 			xenorchestracsi.ParameterStorageRepository: stub.DefaultSRId,
@@ -186,7 +190,7 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
 	})
-	ginkgo.Describe("Sanity VolumeMutableParameters", func() {
+	ginkgo.Describe("Sanity VolumeMutableParameters shared storage", func() {
 		cfg := buildBaseTestConfig()
 		cfg.TestVolumeParameters = map[string]string{
 			xenorchestracsi.ParameterPoolID:      stub.PoolId,
@@ -198,7 +202,7 @@ var _ = ginkgo.Describe("Xen Orchestra CSI Driver Sanity Suite", func() {
 		sc := sanity.GinkgoTest(cfg)
 		sc.Finalize()
 	})
-	ginkgo.Describe("Sanity VolumeMutableParameters", func() {
+	ginkgo.Describe("Sanity VolumeMutableParameters local storage", func() {
 		cfg := buildBaseTestConfig()
 		cfg.TestVolumeParameters = map[string]string{
 			xenorchestracsi.ParameterPoolID:      stub.PoolId,

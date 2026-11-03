@@ -11,6 +11,7 @@ import (
 
 	xenorchestracsi "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi"
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients"
+	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/fake"
 	clientsMock "github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/mock"
 	"github.com/vatesfr/xenorchestra-csi-driver/pkg/xenorchestra-csi/clients/stub"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
@@ -34,7 +35,7 @@ var vdiStore = struct {
 // for all other external dependencies. It is intended exclusively for use in
 // tests. The returned MockXoClient can be used to set up additional
 // expectations in individual test cases.
-func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMounter *FakeMounter) (xenorchestracsi.Driver, *clientsMock.MockXoClient) {
+func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMounter *fake.Mounter) (xenorchestracsi.Driver, *clientsMock.MockXoClient) {
 	ctrl := gomock.NewController(t)
 
 	mockPool := newMockPool(ctrl)
@@ -115,7 +116,8 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 		return matched, nil
 	}).AnyTimes()
 
-	device := "/dev/xvdc"
+	// Xen Orchestra reports the device name without the /dev/ prefix.
+	device := "xvdc"
 	mockXoClient.EXPECT().AttachVDIToVM(gomock.Any(), gomock.Any(), gomock.Any()).Return(&payloads.VBD{
 		ID:     uuid.Must(uuid.NewV4()),
 		Device: &device,

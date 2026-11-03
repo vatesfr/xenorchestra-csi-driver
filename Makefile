@@ -95,7 +95,7 @@ vuln: ## Check for known vulnerabilities
 
 .PHONY: unit
 unit: ## Unit Tests
-	go test -tags=unit $(shell go list ./...) $(TESTARGS)
+	go test $(shell go list ./...) $(TESTARGS)
 
 .PHONY: run
 run: ## Run the application
