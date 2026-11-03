@@ -17,6 +17,7 @@ package xenorchestracsi
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -213,7 +214,6 @@ func (driver *xenorchestraCSIDriver) NodeStageVolume(ctx context.Context, req *c
 	if device == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "device is not set")
 	}
-	devicePath := "/dev/" + device
 
 	currentDevice, _, err := driver.mounter.GetDeviceNameFromMount(stagingTarget)
 	if err != nil {
@@ -228,9 +228,13 @@ func (driver *xenorchestraCSIDriver) NodeStageVolume(ctx context.Context, req *c
 	}
 
 	// Verify the device actually exists on this host before attempting to format/mount.
-	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
-		klog.ErrorS(err, "device does not exist on this host despite SR being connected", "devicePath", devicePath)
-		return nil, status.Errorf(codes.Internal, "device %s does not exist on this host despite SR being connected", devicePath)
+	devicePath, err := driver.mounter.FindDevicePath(device, req.GetPublishContext()["vbd"])
+	if err != nil {
+		klog.ErrorS(err, "failed to find device on this host", "device", device)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, status.Errorf(codes.Internal, "device %s does not exist on this host despite SR being connected", device)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to find device %s on this host: %v", device, err)
 	}
 
 	// Format device if needed

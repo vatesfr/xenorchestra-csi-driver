@@ -15,6 +15,10 @@
 package clients
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	mountutils "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 )
@@ -81,10 +85,16 @@ func (s *SafeMounter) Mount(source, target, fstype string, options []string) err
 // 	return resizeFs.Resize(devicePath, deviceMountPath)
 // }
 
+// FindDevicePath returns the path of the block device on this host, or an
+// error wrapping os.ErrNotExist when the device is not present.
 func (s *SafeMounter) FindDevicePath(deviceName string, vbdUUID string) (string, error) {
 	// Ideally we have a way to figure out the device path from the vbdUUID
 	// but we don't have that information here.
-	return "/dev/" + deviceName, nil
+	devicePath := filepath.Join("/dev", deviceName)
+	if _, err := os.Stat(devicePath); err != nil {
+		return "", fmt.Errorf("device %s: %w", devicePath, err)
+	}
+	return devicePath, nil
 }
 
 func (s *SafeMounter) GetDeviceNameFromMount(mountPath string) (string, int, error) {
