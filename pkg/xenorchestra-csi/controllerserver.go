@@ -41,8 +41,6 @@ func (driver *xenorchestraCSIDriver) ControllerExpandVolume(context.Context, *cs
 
 // ControllerGetCapabilities implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
-	klog.V(5).Infof("ControllerGetCapabilities called, request: %v", req)
-
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: []*csi.ControllerServiceCapability{
 			{
@@ -95,8 +93,6 @@ func (driver *xenorchestraCSIDriver) ControllerGetVolume(context.Context, *csi.C
 // same pool, triggered by the external-resizer when a VolumeAttributesClass is
 // applied to a PVC.
 func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
-	klog.V(2).InfoS("ControllerModifyVolume called", "request", req)
-
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
@@ -174,8 +170,6 @@ func (driver *xenorchestraCSIDriver) ControllerModifyVolume(ctx context.Context,
 
 // ControllerPublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	klog.V(5).Infof("ControllerPublishVolume called, request: %v", req)
-
 	vmUUID, err := uuid.FromString(req.GetNodeId())
 	if err != nil || vmUUID == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
@@ -323,8 +317,6 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 
 // ControllerUnpublishVolume implements Driver.
 func (driver *xenorchestraCSIDriver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	klog.V(5).Infof("ControllerUnpublishVolume called, request: %v", req)
-
 	vmUUID, err := uuid.FromString(req.GetNodeId())
 	if err != nil || vmUUID == uuid.Nil {
 		return nil, status.Errorf(codes.InvalidArgument, "node ID is required")
@@ -367,8 +359,6 @@ func (driver *xenorchestraCSIDriver) CreateSnapshot(context.Context, *csi.Create
 
 // CreateVolume implements Driver.
 func (driver *xenorchestraCSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	klog.V(5).Infof("CreateVolume called, request: %v", req)
-
 	volumeName := req.GetName()
 	if volumeName == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "disk name is required")
@@ -679,8 +669,6 @@ func (driver *xenorchestraCSIDriver) DeleteSnapshot(context.Context, *csi.Delete
 
 // DeleteVolume implements Driver.
 func (driver *xenorchestraCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	klog.V(5).Infof("DeleteVolume called, request: %v", req)
-
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "volume ID is required")
@@ -747,8 +735,6 @@ func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolum
 
 // ValidateVolumeCapabilities implements Driver.
 func (driver *xenorchestraCSIDriver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
-	klog.V(5).Info("ValidateVolumeCapabilities called", "request", req)
-
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Volume ID is required")
