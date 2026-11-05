@@ -784,6 +784,18 @@ func TestListVolumes(t *testing.T) {
 		assert.Equal(t, map[string][]string{"vol-1": {vmA.String()}, "vol-2": nil}, got)
 	})
 
+	t.Run("AllVolumeIdTagsOfAVDI", func(t *testing.T) {
+		c, mockVDI, mockVBD := newClient(t)
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return([]*payloads.VDI{
+			{ID: vdiPlugged, Tags: []string{BuildTag(VDITagKeyVolumeId, "dynamic-id"), "k8s:volumeId:" + vdiPlugged.String(), BuildTag(VDITagKeyVolumeId, "")}},
+		}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached? VDI:|("+vdiPlugged.String()+")").Return([]*payloads.VBD{{Attached: true, VDI: &vdiPlugged, VM: vmA}}, nil)
+
+		got, err := c.ListVolumes(context.Background(), "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]string{"dynamic-id": {vmA.String()}, vdiPlugged.String(): {vmA.String()}}, got)
+	})
+
 	t.Run("BatchesVDIsInVBDQueries", func(t *testing.T) {
 		c, mockVDI, mockVBD := newClient(t)
 		var vdis []*payloads.VDI

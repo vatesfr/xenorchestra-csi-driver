@@ -75,8 +75,8 @@ type XoClient interface {
 	// completes. Returns the new VDI UUID assigned by XAPI after migration.
 	MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
 
-	// ListVolumes returns every VDI carrying a "k8s:volumeId:<id>" tag (and clusterTag
-	// when not empty), keyed by volume ID, with the VM UUIDs where a VBD is plugged.
+	// ListVolumes returns every volume ID found in "k8s:volumeId:<id>" VDI tags (on VDIs that
+	// also carry clusterTag when not empty), with the VM UUIDs where a VBD of that VDI is plugged.
 	ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error)
 }
 
@@ -451,7 +451,8 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 const listVolumesVDIBatch = 50
 
 func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error) {
-	filter := fmt.Sprintf("tags:/^%s/", regexp.QuoteMeta(BuildTag(VDITagKeyVolumeId, "")))
+	volumeIdPrefix := BuildTag(VDITagKeyVolumeId, "")
+	filter := fmt.Sprintf("tags:/^%s/", regexp.QuoteMeta(volumeIdPrefix))
 	if clusterTag != "" {
 		filter += fmt.Sprintf(" tags:/^%s$/", regexp.QuoteMeta(clusterTag))
 	}
@@ -478,11 +479,13 @@ func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[strin
 	}
 	volumes := make(map[string][]string, len(vdis))
 	for _, vdi := range vdis {
-		volumeId := ParseTagValue(vdi.Tags, VDITagKeyVolumeId)
-		if volumeId == "" {
-			continue
+		// A VDI can carry several volume IDs, e.g. a dynamic volume later used as a static
+		// PV through its raw UUID: list every one, or that VA is re-published every cycle.
+		for _, tag := range vdi.Tags {
+			if volumeId, ok := strings.CutPrefix(tag, volumeIdPrefix); ok && volumeId != "" {
+				volumes[volumeId] = append(volumes[volumeId], nodesByVDI[vdi.ID]...)
+			}
 		}
-		volumes[volumeId] = append(volumes[volumeId], nodesByVDI[vdi.ID]...)
 	}
 	return volumes, nil
 }
