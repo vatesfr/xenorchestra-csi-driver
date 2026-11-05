@@ -217,6 +217,6 @@ The driver supports two deployment modes:
 | `--endpoint` | CSI gRPC endpoint | `unix://tmp/csi.sock` |
 | `--config-file` | Path to the XO credentials config file mounted in the controller pod | `/etc/xenorchestra/config.yaml` |
 | `--vdi-name-prefix` | Prefix prepended to the Kubernetes volume name when labelling VDIs in XO | `csi-` |
-| `--cluster-tag` | Tag added to every VDI at creation; `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. | `k8s-managed` |
+| `--cluster-tag` | Tag added to every VDI at creation (and to static VDIs on first publish); `ListVolumes` only returns VDIs carrying this tag. Set to `""` to disable tagging and filtering. See [VBD Attachment Reconciliation](references/vbd-attachment-reconciliation.md). | `k8s-managed` |
 | `--kubernetes-pool-tag` | Tag added to Xen Orchestra pools that are eligible for automatic volume placement when no `poolId` or topology constraints are provided. | `k8s-pool` |
 | `--xo-client-timeout` | HTTP timeout for XenOrchestra API requests. Defaults to `30s`, increase for large pools or slow connections. | `30s` |

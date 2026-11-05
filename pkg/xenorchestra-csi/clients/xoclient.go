@@ -18,6 +18,7 @@ package clients
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -72,6 +73,10 @@ type XoClient interface {
 	// MigrateVDIAndWait migrates vdi to targetSRID and blocks until the task
 	// completes. Returns the new VDI UUID assigned by XAPI after migration.
 	MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
+
+	// ListVolumes returns every VDI carrying a "k8s:volumeId:<id>" tag (and clusterTag
+	// when not empty), keyed by volume ID, with the VM UUIDs where a VBD is plugged.
+	ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error)
 }
 
 type xoClient struct {
@@ -114,9 +119,10 @@ func (c xoClient) ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloa
 		return nil, err
 	}
 
-	updatedVBD, err := c.VBD().Get(ctx, vbd.ID)
+	// The plug task can finish before XAPI sets the device name; wait for it like AttachVDIToVM does.
+	updatedVBD, err := c.WaitForVDIToBeFullyAttached(ctx, vbd.ID)
 	if err != nil {
-		klog.ErrorS(err, "Failed to get updated VBD after connecting", "vbd", vbd)
+		klog.ErrorS(err, "Failed to wait for VBD to be fully attached after connecting", "vbd", vbd)
 		return nil, err
 	}
 
@@ -431,4 +437,38 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 			}
 		}
 	}
+}
+
+// ListVolumes returns every VDI carrying a "k8s:volumeId:<id>" tag, keyed by
+// volume ID, with the VM UUIDs where one of its VBDs is plugged. When
+// clusterTag is not empty, only VDIs also tagged with clusterTag are listed.
+func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error) {
+	filter := fmt.Sprintf("tags:/^%s/", regexp.QuoteMeta(BuildTag(VDITagKeyVolumeId, "")))
+	if clusterTag != "" {
+		filter += fmt.Sprintf(" tags:/^%s$/", regexp.QuoteMeta(clusterTag))
+	}
+	vdis, err := c.VDI().GetAll(ctx, 0, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list volume VDIs: %w", err)
+	}
+	// One call for all plugged VBDs instead of one per VDI.
+	vbds, err := c.VBD().GetAll(ctx, 0, "attached?")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list plugged VBDs: %w", err)
+	}
+	nodesByVDI := make(map[uuid.UUID][]string)
+	for _, vbd := range vbds {
+		if vbd.Attached && vbd.VDI != nil {
+			nodesByVDI[*vbd.VDI] = append(nodesByVDI[*vbd.VDI], vbd.VM.String())
+		}
+	}
+	volumes := make(map[string][]string, len(vdis))
+	for _, vdi := range vdis {
+		volumeId := ParseTagValue(vdi.Tags, VDITagKeyVolumeId)
+		if volumeId == "" {
+			continue
+		}
+		volumes[volumeId] = append(volumes[volumeId], nodesByVDI[vdi.ID]...)
+	}
+	return volumes, nil
 }
