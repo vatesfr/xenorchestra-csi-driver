@@ -9,6 +9,8 @@ on:
       - 'go.sum'
       - 'cmd/**'
       - 'pkg/**'
+      - 'test/**'
+      - '.github/workflows/build-test.yaml'
       - 'Dockerfile'
       - 'Makefile'
 
