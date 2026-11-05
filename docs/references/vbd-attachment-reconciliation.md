@@ -58,8 +58,8 @@ and the pod was running 18 s after.
   [VDI Lookup and Identification](vdi-lookup-and-identification.md)).
 - **Published nodes**: the UUIDs of the VMs (the CSI node IDs) where a VBD of the VDI is
   plugged. An unplugged VBD does not count.
-- **Cost**: two Xen Orchestra API calls per `ListVolumes` call, whatever the number of
-  volumes.
+- **Cost**: one Xen Orchestra API call for the VDIs, plus one call per 50 VDIs for
+  their plugged VBDs (`attached? VDI:|(<id> …)`). VBDs of other disks are never fetched.
 - **Errors**: if a Xen Orchestra call fails, `ListVolumes` returns an error and the
   attacher skips that cycle. The driver never returns a partial list, because the
   attacher would then process every missing volume again.

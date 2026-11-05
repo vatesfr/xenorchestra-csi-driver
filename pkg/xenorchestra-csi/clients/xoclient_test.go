@@ -773,9 +773,9 @@ func TestListVolumes(t *testing.T) {
 			{ID: vdiPlugged, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-1")}},
 			{ID: vdiFree, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-2")}},
 		}, nil)
-		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached?").Return([]*payloads.VBD{
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached? VDI:|("+vdiPlugged.String()+" "+vdiFree.String()+")").Return([]*payloads.VBD{
 			{Attached: true, VDI: &vdiPlugged, VM: vmA},
-			{Attached: true, VDI: &osDisk, VM: vmB},
+			{Attached: true, VDI: &osDisk, VM: vmB},   // not asked for; ignored if XO returns it
 			{Attached: false, VDI: &vdiFree, VM: vmB}, // filter is server-side; stay safe if it ever leaks
 		}, nil)
 
@@ -784,10 +784,30 @@ func TestListVolumes(t *testing.T) {
 		assert.Equal(t, map[string][]string{"vol-1": {vmA.String()}, "vol-2": nil}, got)
 	})
 
-	t.Run("NoClusterTag", func(t *testing.T) {
+	t.Run("BatchesVDIsInVBDQueries", func(t *testing.T) {
 		c, mockVDI, mockVBD := newClient(t)
+		var vdis []*payloads.VDI
+		for i := range listVolumesVDIBatch + 1 {
+			vdis = append(vdis, &payloads.VDI{ID: uuid.Must(uuid.NewV4()), Tags: []string{BuildTag(VDITagKeyVolumeId, fmt.Sprintf("vol-%d", i))}})
+		}
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return(vdis, nil)
+		var filters []string
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, gomock.Any()).DoAndReturn(func(_ context.Context, _ int, f string) ([]*payloads.VBD, error) {
+			filters = append(filters, f)
+			return nil, nil
+		}).Times(2)
+
+		got, err := c.ListVolumes(context.Background(), "")
+		require.NoError(t, err)
+		assert.Len(t, got, listVolumesVDIBatch+1)
+		require.Len(t, filters, 2)
+		assert.Equal(t, "attached? VDI:|("+vdis[listVolumesVDIBatch].ID.String()+")", filters[1])
+	})
+
+	t.Run("NoClusterTag", func(t *testing.T) {
+		c, mockVDI, _ := newClient(t) // the VBD mock fails the test if it is called
 		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return(nil, nil)
-		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached?").Return(nil, nil)
+		// no VDI: no VBD query at all
 		got, err := c.ListVolumes(context.Background(), "")
 		require.NoError(t, err)
 		assert.Empty(t, got)
@@ -795,8 +815,8 @@ func TestListVolumes(t *testing.T) {
 
 	t.Run("VBDErrorFails", func(t *testing.T) {
 		c, mockVDI, mockVBD := newClient(t)
-		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return(nil, nil)
-		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached?").Return(nil, errors.New("boom"))
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return([]*payloads.VDI{{ID: vdiFree, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-2")}}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, gomock.Any()).Return(nil, errors.New("boom"))
 		_, err := c.ListVolumes(context.Background(), "")
 		require.Error(t, err)
 	})

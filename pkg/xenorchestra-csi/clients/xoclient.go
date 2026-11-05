@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -446,6 +447,9 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 // ListVolumes returns every VDI carrying a "k8s:volumeId:<id>" tag, keyed by
 // volume ID, with the VM UUIDs where one of its VBDs is plugged. When
 // clusterTag is not empty, only VDIs also tagged with clusterTag are listed.
+// listVolumesVDIBatch is how many VDI IDs go into one VBD filter (about 2 KB of URL).
+const listVolumesVDIBatch = 50
+
 func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error) {
 	filter := fmt.Sprintf("tags:/^%s/", regexp.QuoteMeta(BuildTag(VDITagKeyVolumeId, "")))
 	if clusterTag != "" {
@@ -455,15 +459,21 @@ func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to list volume VDIs: %w", err)
 	}
-	// One call for all plugged VBDs instead of one per VDI.
-	vbds, err := c.VBD().GetAll(ctx, 0, "attached?")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list plugged VBDs: %w", err)
-	}
+	// Only the plugged VBDs of these VDIs, a batch of VDIs per call to keep the URL short.
 	nodesByVDI := make(map[uuid.UUID][]string)
-	for _, vbd := range vbds {
-		if vbd.Attached && vbd.VDI != nil {
-			nodesByVDI[*vbd.VDI] = append(nodesByVDI[*vbd.VDI], vbd.VM.String())
+	for batch := range slices.Chunk(vdis, listVolumesVDIBatch) {
+		ids := make([]string, len(batch))
+		for i, vdi := range batch {
+			ids[i] = vdi.ID.String()
+		}
+		vbds, err := c.VBD().GetAll(ctx, 0, fmt.Sprintf("attached? VDI:|(%s)", strings.Join(ids, " ")))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list plugged VBDs: %w", err)
+		}
+		for _, vbd := range vbds {
+			if vbd.Attached && vbd.VDI != nil {
+				nodesByVDI[*vbd.VDI] = append(nodesByVDI[*vbd.VDI], vbd.VM.String())
+			}
 		}
 	}
 	volumes := make(map[string][]string, len(vdis))
