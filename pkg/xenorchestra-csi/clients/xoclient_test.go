@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
@@ -819,4 +820,33 @@ func TestConnectVBDToVMWaitsForDevice(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got.Device)
 	assert.Equal(t, device, *got.Device)
+}
+
+// A canceled request (e.g. the attacher's gRPC timeout) must stop the wait at once
+// instead of polling XO for the full 2 minutes.
+func TestWaitForVDIToBeFullyAttachedStopsOnCancel(t *testing.T) {
+	c, mockVBD, _ := newClientWithMockVBDAndTask(t)
+	vbdID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000002"))
+	mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID}, nil).Times(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	_, err := c.WaitForVDIToBeFullyAttached(ctx, vbdID)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 500*time.Millisecond)
+}
+
+// The first check happens before any wait, so an already attached VBD returns at once.
+func TestWaitForVDIToBeFullyAttachedChecksImmediately(t *testing.T) {
+	c, mockVBD, _ := newClientWithMockVBDAndTask(t)
+	vbdID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000003"))
+	device := "xvdb"
+	mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID, Attached: true, Device: &device}, nil)
+
+	start := time.Now()
+	got, err := c.WaitForVDIToBeFullyAttached(context.Background(), vbdID)
+	require.NoError(t, err)
+	assert.Equal(t, device, *got.Device)
+	assert.Less(t, time.Since(start), 500*time.Millisecond)
 }

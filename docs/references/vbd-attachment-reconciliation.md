@@ -107,7 +107,7 @@ ps -o stat= -p "$(pgrep -x xenwatch)"   # D means xenwatch is stuck
 ```
 
 **Fix**: drain the node if possible, then hard-reboot the VM from Xen Orchestra. A
-normal reboot usually hangs.
+normal reboot can hang on the stuck unmount.
 
 ### Other cases
 
