@@ -25,3 +25,4 @@ material is grouped into subfolders:
 - [Volume Handle and Volume ID in v0.3.0](references/volume-handle-and-volume-id-v0.3.0.md)
 - [Local Storage: VDI Placement and Migration](references/local-storage.md)
 - [VDI Lookup and Identification](references/vdi-lookup-and-identification.md)
+- [VBD Attachment Reconciliation](references/vbd-attachment-reconciliation.md)

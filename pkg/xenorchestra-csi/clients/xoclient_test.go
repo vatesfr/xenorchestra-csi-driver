@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
@@ -750,4 +751,134 @@ func TestFindLocalSRsForPool(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, apiErr)
 	})
+}
+
+func TestListVolumes(t *testing.T) {
+	volFilter := `tags:/^k8s:volumeId:/`
+	vmA := uuid.Must(uuid.FromString("aaaaaaaa-0000-0000-0000-00000000000a"))
+	vmB := uuid.Must(uuid.FromString("aaaaaaaa-0000-0000-0000-00000000000b"))
+	vdiPlugged := uuid.Must(uuid.FromString("cccccccc-0000-0000-0000-0000000000a1"))
+	vdiFree := uuid.Must(uuid.FromString("cccccccc-0000-0000-0000-0000000000a2"))
+	osDisk := uuid.Must(uuid.FromString("cccccccc-0000-0000-0000-0000000000a3"))
+
+	newClient := func(t *testing.T) (*xoClient, *xoLibMock.MockVDI, *xoLibMock.MockVBD) {
+		ctrl := gomock.NewController(t)
+		mockVDI, mockVBD := xoLibMock.NewMockVDI(ctrl), xoLibMock.NewMockVBD(ctrl)
+		return &xoClient{Library: stubLibrary{vdi: mockVDI, vbd: mockVBD}}, mockVDI, mockVBD
+	}
+
+	t.Run("MapsPluggedVBDsToVolumes", func(t *testing.T) {
+		c, mockVDI, mockVBD := newClient(t)
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter+` tags:/^k8s-managed$/`).Return([]*payloads.VDI{
+			{ID: vdiPlugged, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-1")}},
+			{ID: vdiFree, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-2")}},
+		}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached? VDI:|("+vdiPlugged.String()+" "+vdiFree.String()+")").Return([]*payloads.VBD{
+			{Attached: true, VDI: &vdiPlugged, VM: vmA},
+			{Attached: true, VDI: &osDisk, VM: vmB},   // not asked for; ignored if XO returns it
+			{Attached: false, VDI: &vdiFree, VM: vmB}, // filter is server-side; stay safe if it ever leaks
+		}, nil)
+
+		got, err := c.ListVolumes(context.Background(), "k8s-managed")
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]string{"vol-1": {vmA.String()}, "vol-2": nil}, got)
+	})
+
+	t.Run("AllVolumeIdTagsOfAVDI", func(t *testing.T) {
+		c, mockVDI, mockVBD := newClient(t)
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return([]*payloads.VDI{
+			{ID: vdiPlugged, Tags: []string{BuildTag(VDITagKeyVolumeId, "dynamic-id"), "k8s:volumeId:" + vdiPlugged.String(), BuildTag(VDITagKeyVolumeId, "")}},
+		}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "attached? VDI:|("+vdiPlugged.String()+")").Return([]*payloads.VBD{{Attached: true, VDI: &vdiPlugged, VM: vmA}}, nil)
+
+		got, err := c.ListVolumes(context.Background(), "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]string{"dynamic-id": {vmA.String()}, vdiPlugged.String(): {vmA.String()}}, got)
+	})
+
+	t.Run("BatchesVDIsInVBDQueries", func(t *testing.T) {
+		c, mockVDI, mockVBD := newClient(t)
+		var vdis []*payloads.VDI
+		for i := range listVolumesVDIBatch + 1 {
+			vdis = append(vdis, &payloads.VDI{ID: uuid.Must(uuid.NewV4()), Tags: []string{BuildTag(VDITagKeyVolumeId, fmt.Sprintf("vol-%d", i))}})
+		}
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return(vdis, nil)
+		var filters []string
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, gomock.Any()).DoAndReturn(func(_ context.Context, _ int, f string) ([]*payloads.VBD, error) {
+			filters = append(filters, f)
+			return nil, nil
+		}).Times(2)
+
+		got, err := c.ListVolumes(context.Background(), "")
+		require.NoError(t, err)
+		assert.Len(t, got, listVolumesVDIBatch+1)
+		require.Len(t, filters, 2)
+		assert.Equal(t, "attached? VDI:|("+vdis[listVolumesVDIBatch].ID.String()+")", filters[1])
+	})
+
+	t.Run("NoClusterTag", func(t *testing.T) {
+		c, mockVDI, _ := newClient(t) // the VBD mock fails the test if it is called
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return(nil, nil)
+		// no VDI: no VBD query at all
+		got, err := c.ListVolumes(context.Background(), "")
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	})
+
+	t.Run("VBDErrorFails", func(t *testing.T) {
+		c, mockVDI, mockVBD := newClient(t)
+		mockVDI.EXPECT().GetAll(gomock.Any(), 0, volFilter).Return([]*payloads.VDI{{ID: vdiFree, Tags: []string{BuildTag(VDITagKeyVolumeId, "vol-2")}}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, gomock.Any()).Return(nil, errors.New("boom"))
+		_, err := c.ListVolumes(context.Background(), "")
+		require.Error(t, err)
+	})
+}
+
+// Regression: the plug task can finish before XAPI sets the device; returning that VBD
+// made publishContextFromVBD dereference a nil Device and crash the controller.
+func TestConnectVBDToVMWaitsForDevice(t *testing.T) {
+	c, mockVBD, mockTask := newClientWithMockVBDAndTask(t)
+	vbdID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000001"))
+	device := "xvdb"
+
+	mockVBD.EXPECT().Connect(gomock.Any(), vbdID).Return(taskID, nil)
+	mockTask.EXPECT().Wait(gomock.Any(), taskID).Return(&payloads.Task{Status: payloads.Success}, nil)
+	gomock.InOrder(
+		mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID, Attached: true}, nil),
+		mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID, Attached: true, Device: &device}, nil),
+	)
+
+	got, err := c.ConnectVBDToVM(context.Background(), payloads.VBD{ID: vbdID})
+	require.NoError(t, err)
+	require.NotNil(t, got.Device)
+	assert.Equal(t, device, *got.Device)
+}
+
+// A canceled request (e.g. the attacher's gRPC timeout) must stop the wait at once
+// instead of polling XO for the full 2 minutes.
+func TestWaitForVDIToBeFullyAttachedStopsOnCancel(t *testing.T) {
+	c, mockVBD, _ := newClientWithMockVBDAndTask(t)
+	vbdID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000002"))
+	mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID}, nil).Times(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	_, err := c.WaitForVDIToBeFullyAttached(ctx, vbdID)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, time.Since(start), 500*time.Millisecond)
+}
+
+// The first check happens before any wait, so an already attached VBD returns at once.
+func TestWaitForVDIToBeFullyAttachedChecksImmediately(t *testing.T) {
+	c, mockVBD, _ := newClientWithMockVBDAndTask(t)
+	vbdID := uuid.Must(uuid.FromString("ffffffff-0000-0000-0000-000000000003"))
+	device := "xvdb"
+	mockVBD.EXPECT().Get(gomock.Any(), vbdID).Return(&payloads.VBD{ID: vbdID, Attached: true, Device: &device}, nil)
+
+	start := time.Now()
+	got, err := c.WaitForVDIToBeFullyAttached(context.Background(), vbdID)
+	require.NoError(t, err)
+	assert.Equal(t, device, *got.Device)
+	assert.Less(t, time.Since(start), 500*time.Millisecond)
 }

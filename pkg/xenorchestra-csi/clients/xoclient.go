@@ -18,6 +18,8 @@ package clients
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -72,6 +74,10 @@ type XoClient interface {
 	// MigrateVDIAndWait migrates vdi to targetSRID and blocks until the task
 	// completes. Returns the new VDI UUID assigned by XAPI after migration.
 	MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error)
+
+	// ListVolumes returns every volume ID found in "k8s:volumeId:<id>" VDI tags (on VDIs that
+	// also carry clusterTag when not empty), with the VM UUIDs where a VBD of that VDI is plugged.
+	ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error)
 }
 
 type xoClient struct {
@@ -114,9 +120,10 @@ func (c xoClient) ConnectVBDToVM(ctx context.Context, vbd payloads.VBD) (*payloa
 		return nil, err
 	}
 
-	updatedVBD, err := c.VBD().Get(ctx, vbd.ID)
+	// The plug task can finish before XAPI sets the device name; wait for it like AttachVDIToVM does.
+	updatedVBD, err := c.WaitForVDIToBeFullyAttached(ctx, vbd.ID)
 	if err != nil {
-		klog.ErrorS(err, "Failed to get updated VBD after connecting", "vbd", vbd)
+		klog.ErrorS(err, "Failed to wait for VBD to be fully attached after connecting", "vbd", vbd)
 		return nil, err
 	}
 
@@ -177,30 +184,34 @@ func (c xoClient) CreateNewVolume(ctx context.Context, srID uuid.UUID, namePrefi
 	return vdiID, volumeId, nil
 }
 
-// waitForDiskToBeAttached waits for the disk to be attached.
-// This pools every 500ms to check if the disk is attached and if a device name is assigned.
-// Hardcoded timeout of 2 minutes.
+// WaitForVDIToBeFullyAttached waits until the VBD is attached and has a device name.
+// It checks once right away, then every second, for up to 2 minutes, and stops early
+// when ctx is canceled (e.g. the CSI sidecar's gRPC timeout).
 // NOTE: This is required because the VBD can be attached but returned without a device name when `vm.attach` command succeeded.
 // See: https://github.com/vatesfr/xen-orchestra/pull/9192
 func (c xoClient) WaitForVDIToBeFullyAttached(ctx context.Context, vbdID uuid.UUID) (*payloads.VBD, error) {
 	timeout := time.After(2 * time.Minute)
-	tick := time.Tick(1 * time.Second)
+	tick := time.NewTicker(1 * time.Second)
+	defer tick.Stop()
 
 	for {
+		vbd, err := c.VBD().Get(ctx, vbdID)
+		switch {
+		case err != nil:
+			klog.ErrorS(err, "Failed to get VBD while waiting for disk to be attached", "vbd", vbdID)
+		case vbd.Attached && vbd.Device != nil && *vbd.Device != "":
+			klog.V(4).InfoS("Disk is now attached", "vbd", vbd.ID, "vm", vbd.VM, "device", vbd.Device)
+			return vbd, nil
+		default:
+			klog.V(5).InfoS("Disk not yet attached, waiting...", "vbd", vbd.ID, "vm", vbd.VM)
+		}
+
 		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("stopped waiting for VBD %s to be attached: %w", vbdID, ctx.Err())
 		case <-timeout:
 			return nil, fmt.Errorf("timed out waiting for VBD %s to be attached", vbdID)
-		case <-tick:
-			vbd, err := c.VBD().Get(ctx, vbdID)
-			if err != nil {
-				klog.ErrorS(err, "Failed to get VBD while waiting for disk to be attached", "vbd", vbdID)
-				continue
-			}
-			if vbd.Attached && vbd.Device != nil && *vbd.Device != "" {
-				klog.V(4).InfoS("Disk is now attached", "vbd", vbd.ID, "vm", vbd.VM, "device", vbd.Device)
-				return vbd, nil
-			}
-			klog.V(5).InfoS("Disk not yet attached, waiting...", "vbd", vbd.ID, "vm", vbd.VM)
+		case <-tick.C:
 		}
 	}
 }
@@ -431,4 +442,50 @@ func (c xoClient) writeTagsToVDI(ctx context.Context, vdiID uuid.UUID, tags []st
 			}
 		}
 	}
+}
+
+// ListVolumes returns every VDI carrying a "k8s:volumeId:<id>" tag, keyed by
+// volume ID, with the VM UUIDs where one of its VBDs is plugged. When
+// clusterTag is not empty, only VDIs also tagged with clusterTag are listed.
+// listVolumesVDIBatch is how many VDI IDs go into one VBD filter (about 2 KB of URL).
+const listVolumesVDIBatch = 50
+
+func (c xoClient) ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error) {
+	volumeIdPrefix := BuildTag(VDITagKeyVolumeId, "")
+	filter := fmt.Sprintf("tags:/^%s/", regexp.QuoteMeta(volumeIdPrefix))
+	if clusterTag != "" {
+		filter += fmt.Sprintf(" tags:/^%s$/", regexp.QuoteMeta(clusterTag))
+	}
+	vdis, err := c.VDI().GetAll(ctx, 0, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list volume VDIs: %w", err)
+	}
+	// Only the plugged VBDs of these VDIs, a batch of VDIs per call to keep the URL short.
+	nodesByVDI := make(map[uuid.UUID][]string)
+	for batch := range slices.Chunk(vdis, listVolumesVDIBatch) {
+		ids := make([]string, len(batch))
+		for i, vdi := range batch {
+			ids[i] = vdi.ID.String()
+		}
+		vbds, err := c.VBD().GetAll(ctx, 0, fmt.Sprintf("attached? VDI:|(%s)", strings.Join(ids, " ")))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list plugged VBDs: %w", err)
+		}
+		for _, vbd := range vbds {
+			if vbd.Attached && vbd.VDI != nil {
+				nodesByVDI[*vbd.VDI] = append(nodesByVDI[*vbd.VDI], vbd.VM.String())
+			}
+		}
+	}
+	volumes := make(map[string][]string, len(vdis))
+	for _, vdi := range vdis {
+		// A VDI can carry several volume IDs, e.g. a dynamic volume later used as a static
+		// PV through its raw UUID: list every one, or that VA is re-published every cycle.
+		for _, tag := range vdi.Tags {
+			if volumeId, ok := strings.CutPrefix(tag, volumeIdPrefix); ok && volumeId != "" {
+				volumes[volumeId] = append(volumes[volumeId], nodesByVDI[vdi.ID]...)
+			}
+		}
+	}
+	return volumes, nil
 }

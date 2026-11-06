@@ -18,7 +18,9 @@ package xenorchestracsi
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
+	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/gofrs/uuid"
@@ -68,6 +70,20 @@ func (driver *xenorchestraCSIDriver) ControllerGetCapabilities(ctx context.Conte
 				Type: &csi.ControllerServiceCapability_Rpc{
 					Rpc: &csi.ControllerServiceCapability_RPC{
 						Type: csi.ControllerServiceCapability_RPC_GET_VOLUME,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES,
 					},
 				},
 			},
@@ -728,9 +744,48 @@ func (driver *xenorchestraCSIDriver) ListSnapshots(context.Context, *csi.ListSna
 }
 
 // ListVolumes implements Driver.
-func (driver *xenorchestraCSIDriver) ListVolumes(context.Context, *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	klog.Error("ListVolumes is not implemented")
-	return nil, status.Error(codes.Unimplemented, "ListVolumes is not implemented")
+// published_node_ids only lists VMs where the VBD is plugged, so the external-attacher
+// reconciler re-runs ControllerPublishVolume (which re-plugs the VBD) when it gets unplugged.
+// They must be CSI node IDs, i.e. what NodeGetInfo returns and the CO keeps in CSINode: the
+// bare VM UUID, not the Node's providerID (xenorchestra://<pool>/<vm>). Any other format
+// matches no VolumeAttachment, and every volume would be re-published on every cycle.
+func (driver *xenorchestraCSIDriver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+	if req.GetMaxEntries() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "max_entries must not be negative")
+	}
+	start := 0
+	if token := req.GetStartingToken(); token != "" {
+		var err error
+		if start, err = strconv.Atoi(token); err != nil || start < 0 {
+			return nil, status.Errorf(codes.Aborted, "invalid starting token %q", token)
+		}
+	}
+
+	// Never return a partial list: the attacher would re-publish every missing volume.
+	volumes, err := driver.xoClient.ListVolumes(ctx, driver.clusterTag)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list volumes: %v", err)
+	}
+	ids := slices.Sorted(maps.Keys(volumes))
+	if start > len(ids) {
+		return nil, status.Errorf(codes.Aborted, "starting token %d is past the %d volumes", start, len(ids))
+	}
+
+	end := len(ids)
+	if maxEntries := int(req.GetMaxEntries()); maxEntries > 0 && start+maxEntries < end {
+		end = start + maxEntries
+	}
+	resp := &csi.ListVolumesResponse{}
+	for _, id := range ids[start:end] {
+		resp.Entries = append(resp.Entries, &csi.ListVolumesResponse_Entry{
+			Volume: &csi.Volume{VolumeId: id},
+			Status: &csi.ListVolumesResponse_VolumeStatus{PublishedNodeIds: volumes[id]},
+		})
+	}
+	if end < len(ids) {
+		resp.NextToken = strconv.Itoa(end)
+	}
+	return resp, nil
 }
 
 // ValidateVolumeCapabilities implements Driver.

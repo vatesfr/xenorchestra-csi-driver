@@ -223,6 +223,21 @@ func (mr *MockXoClientMockRecorder) IsVDIUsedAnywhere(ctx, vdi any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsVDIUsedAnywhere", reflect.TypeOf((*MockXoClient)(nil).IsVDIUsedAnywhere), ctx, vdi)
 }
 
+// ListVolumes mocks base method.
+func (m *MockXoClient) ListVolumes(ctx context.Context, clusterTag string) (map[string][]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListVolumes", ctx, clusterTag)
+	ret0, _ := ret[0].(map[string][]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListVolumes indicates an expected call of ListVolumes.
+func (mr *MockXoClientMockRecorder) ListVolumes(ctx, clusterTag any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVolumes", reflect.TypeOf((*MockXoClient)(nil).ListVolumes), ctx, clusterTag)
+}
+
 // MigrateVDIAndWait mocks base method.
 func (m *MockXoClient) MigrateVDIAndWait(ctx context.Context, vdi payloads.VDI, targetSRID uuid.UUID) (uuid.UUID, error) {
 	m.ctrl.T.Helper()

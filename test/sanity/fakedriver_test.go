@@ -154,6 +154,15 @@ func NewFakeDriver(t *testing.T, options *xenorchestracsi.DriverOptions, fakeMou
 	}).AnyTimes()
 
 	mockXoClient.EXPECT().IsSRAttachedToHost(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockXoClient.EXPECT().ListVolumes(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ string) (map[string][]string, error) {
+		vdiStore.RLock()
+		defer vdiStore.RUnlock()
+		volumes := make(map[string][]string, len(vdiStore.byID))
+		for _, vdi := range vdiStore.byID {
+			volumes[clients.ParseTagValue(vdi.Tags, clients.VDITagKeyVolumeId)] = nil
+		}
+		return volumes, nil
+	}).AnyTimes()
 
 	return xenorchestracsi.NewDriverWithDependencies(
 		options,

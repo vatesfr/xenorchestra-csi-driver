@@ -136,6 +136,7 @@ the [Usage and Examples guide](docs/usage.md).
 - [x] `poolId` validation against `accessibility_requirements` requisite topologies
 - [x] `VOLUME_ACCESSIBILITY_CONSTRAINTS` controller capability — `AccessibleTopology` returned in `CreateVolumeResponse`, topology requirements honoured in `CreateVolumeRequest`
 - [x] Cluster tag filtering (`--cluster-tag`; VDIs tagged at creation)
+- [x] `ListVolumes` with published nodes: the external-attacher re-plugs unplugged VBDs ([details](docs/references/vbd-attachment-reconciliation.md))
 - [x] Cluster Topology support
 - [x] Multi-SR support (migration...)
 - [x] Local SR support (`storageType: local` — VDI migration to host-local SR in `ControllerPublishVolume`)
