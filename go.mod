@@ -10,7 +10,7 @@ require (
 	github.com/kubernetes-csi/csi-lib-utils v0.25.0
 	github.com/kubernetes-csi/csi-test/v5 v5.6.0
 	github.com/onsi/ginkgo/v2 v2.32.2
-	github.com/onsi/gomega v1.42.1
+	github.com/onsi/gomega v1.43.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.12.1
