@@ -337,6 +337,20 @@ func (mr *MockXoClientMockRecorder) Task() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Task", reflect.TypeOf((*MockXoClient)(nil).Task))
 }
 
+// Template mocks base method.
+func (m *MockXoClient) Template() library.Template {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Template")
+	ret0, _ := ret[0].(library.Template)
+	return ret0
+}
+
+// Template indicates an expected call of Template.
+func (mr *MockXoClientMockRecorder) Template() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Template", reflect.TypeOf((*MockXoClient)(nil).Template))
+}
+
 // V1Client mocks base method.
 func (m *MockXoClient) V1Client() client.XOClient {
 	m.ctrl.T.Helper()
