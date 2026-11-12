@@ -209,6 +209,34 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.Internal, "failed to look up volume %s: %v", volumeId, err)
 	}
 
+	// Get Node/VM
+	nodeVM, err := driver.xoClient.VM().GetByID(ctx, vmUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "failed to get VM by ID %s: %v", vmUUID, err)
+	}
+	if nodeVM.PoolID != vdi.PoolID {
+		klog.ErrorS(nil, "Cannot attach a VDI to a VM that belongs to a different pool", "vdiPool", vdi.PoolID, "vmPool", nodeVM.PoolID)
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolID, nodeVM.PoolID)
+	}
+
+	// Check the VBDs before tagging or migrating, so a refused publish leaves the VDI untouched.
+	// A VBD on another VM that is not plugged is tolerated: XAPI refuses to plug a VDI twice.
+	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, vdi)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check if VDI is already attached: %v", err)
+	}
+	var vbdToAttach *payloads.VBD
+	for _, vbd := range vbds {
+		if vbd.Attached && vbd.VM != vmUUID {
+			klog.ErrorS(nil, "VDI is already attached to another VM", "vdi", vdi.ID, "vmID", vbd.VM)
+			return nil, status.Errorf(codes.FailedPrecondition, "VDI %s is already attached to another VM %s", vdi.ID, vbd.VM)
+		}
+		// Prefer a plugged VBD if this VM has several (a stale unplugged one would fail to plug).
+		if vbd.VM == vmUUID && (vbdToAttach == nil || vbd.Attached) {
+			vbdToAttach = vbd
+		}
+	}
+
 	// Adopt the VDI into this cluster's tag set if the tag is not already present.
 	// This ensures static (pre-existing) VDIs are visible without requiring manual
 	// re-tagging.
@@ -220,18 +248,9 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		klog.V(4).InfoS("Added cluster tag to VDI", "vdiID", vdi.ID, "tag", driver.clusterTag)
 	}
 
-	// Get Node/VM
-	nodeVM, err := driver.xoClient.VM().GetByID(ctx, vmUUID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "failed to get VM by ID %s: %v", vmUUID, err)
-	}
-	if nodeVM.PoolID != vdi.PoolID {
-		klog.ErrorS(err, "Cannot attach a VDI to a VM that belongs to a different pool", "vdiPool", vdi.PoolID, "vmPool", nodeVM.PoolID)
-		return nil, status.Errorf(codes.FailedPrecondition, "cannot attach VDI from pool %s to VM in pool %s", vdi.PoolID, nodeVM.PoolID)
-	}
-
 	// For local storage, migrate the VDI to the host's local SR if needed.
-	if req.GetVolumeContext()[VolumeContextKeyStorageType] == StorageTypeLocal {
+	// Skipped when this VM already has a VBD: the VDI was placed at the first publish.
+	if vbdToAttach == nil && req.GetVolumeContext()[VolumeContextKeyStorageType] == StorageTypeLocal {
 		localSR, err := driver.xoClient.FindLocalSRForHost(ctx, nodeVM.Container)
 		if err != nil {
 			return nil, status.Errorf(codes.FailedPrecondition,
@@ -266,55 +285,32 @@ func (driver *xenorchestraCSIDriver) ControllerPublishVolume(ctx context.Context
 		return nil, status.Errorf(codes.FailedPrecondition, "SR is not attached to the VM host: %v", err)
 	}
 
-	// Check the VDI is not already attached to another VM
-	vbds, err := driver.xoClient.IsVDIUsedAnywhere(ctx, vdi)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to check if VDI is already attached: %v", err)
-	}
-
-	if len(vbds) > 0 {
-		var vbdToAttach *payloads.VBD
-		for _, vbd := range vbds {
-			if vbd.Attached && vbd.VM != vmUUID {
-				klog.ErrorS(err, "VDI is already attached to another VM", "vdi", vdi.ID, "vmID", vbd.VM)
-				return nil, status.Errorf(codes.FailedPrecondition, "VDI %s is already attached to another VM %s", vdi.ID, vbd.VM)
-			} else if vbd.VM == vmUUID {
-				vbdToAttach = vbd
-				// Continue to check all VDB to be sure the VDI ins't connected to any VM
-				continue
-			}
-		}
-		if vbdToAttach != nil {
-			// The VDI is already added to this VM; connect it if not yet hot-plugged.
-			if !vbdToAttach.Attached {
-				klog.V(5).InfoS("Connecting existing VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
-				vbdConnected, err := driver.xoClient.ConnectVBDToVM(ctx, *vbdToAttach)
-				if err != nil {
-					klog.ErrorS(err, "Failed to connect VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
-					return nil, status.Errorf(codes.Internal, "Failed to connect VBD to VM: %v", err)
-				}
-				return &csi.ControllerPublishVolumeResponse{
-					PublishContext: publishContextFromVBD(*vbdConnected),
-				}, nil
-			}
-			klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
-			if vbdToAttach.Device == nil {
-				klog.ErrorS(nil, "Device name is not yet assigned to the VBD, waiting...", "vbd", vbdToAttach)
-				vbdToAttach, err = driver.xoClient.WaitForVDIToBeFullyAttached(ctx, vbdToAttach.ID)
-				if err != nil {
-					klog.ErrorS(err, "Failed to wait for VBD to be fully attached", "vbd", vbdToAttach)
-					return nil, status.Errorf(codes.Internal, "Failed to wait for VBD to be fully attached: %v", err)
-				}
-				klog.V(5).InfoS("VBD is now fully attached with device name assigned", "vbd", vbdToAttach)
+	if vbdToAttach != nil {
+		// The VDI is already added to this VM; connect it if not yet hot-plugged.
+		if !vbdToAttach.Attached {
+			klog.V(5).InfoS("Connecting existing VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
+			vbdConnected, err := driver.xoClient.ConnectVBDToVM(ctx, *vbdToAttach)
+			if err != nil {
+				klog.ErrorS(err, "Failed to connect VBD to VM", "vbd", *vbdToAttach, "vmUUID", vmUUID)
+				return nil, status.Errorf(codes.Internal, "Failed to connect VBD to VM: %v", err)
 			}
 			return &csi.ControllerPublishVolumeResponse{
-				PublishContext: publishContextFromVBD(*vbdToAttach),
+				PublishContext: publishContextFromVBD(*vbdConnected),
 			}, nil
-		} else {
-			// Else, it means the VDI is added to a VM (= has VBD) but is not attached (connected) to it
-			// We can continue to attach it to the node
-			klog.V(5).InfoS("VDI is already added to another VM but not attached to it. Continue to attach it to the node", "vdi", vdi)
 		}
+		klog.V(2).InfoS("VDI already attached to the node", "vbd", vbdToAttach)
+		if vbdToAttach.Device == nil {
+			klog.ErrorS(nil, "Device name is not yet assigned to the VBD, waiting...", "vbd", vbdToAttach)
+			vbdToAttach, err = driver.xoClient.WaitForVDIToBeFullyAttached(ctx, vbdToAttach.ID)
+			if err != nil {
+				klog.ErrorS(err, "Failed to wait for VBD to be fully attached", "vbd", vbdToAttach)
+				return nil, status.Errorf(codes.Internal, "Failed to wait for VBD to be fully attached: %v", err)
+			}
+			klog.V(5).InfoS("VBD is now fully attached with device name assigned", "vbd", vbdToAttach)
+		}
+		return &csi.ControllerPublishVolumeResponse{
+			PublishContext: publishContextFromVBD(*vbdToAttach),
+		}, nil
 	}
 
 	klog.V(5).InfoS("Attaching VDI to VM", "vdi", vdi, "vmUUID", vmUUID)
