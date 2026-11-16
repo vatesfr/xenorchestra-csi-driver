@@ -1,3 +1,40 @@
+<a name="v1.0.0-rc.2"></a>
+## [v1.0.0-rc.2](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v1.0.0-rc.1-2...v1.0.0-rc.2) (2026-11-16)
+
+Welcome to the v1.0.0-rc.2 release of Kubernetes CSI driver for Xen Orchestra!
+
+### Bug Fixes
+
+- **controller:** check VBDs before tagging or migrating on publish (#99)
+- **controller:** check VBDs before tagging or migrating on publish
+- **xoclient:** list every volume ID tag of a VDI in ListVolumes
+- **xoclient:** stop waiting for a VBD when the request is canceled
+- **logging:** strip secrets from CSI request logs
+- unplug the VBD before deleting it to avoid data corruption
+
+### Features
+
+- **controller:** implement ListVolumes so the attacher re-plugs unplugged VBDs
+
+### Changelog
+
+* ed8b6e1 fix(controller): check VBDs before tagging or migrating on publish (#99)
+* f77fc4f fix(controller): check VBDs before tagging or migrating on publish
+* a4cbe57 build(deps): bump github/codeql-action from 4.37.7 to 4.39.0 (#95)
+* 3a60583 build(deps): bump github.com/vatesfr/xenorchestra-go-sdk from 1.18.0 to 1.22.0 (#89)
+* 7b9ef51 build(deps): bump github.com/onsi/gomega from 1.42.1 to 1.43.0 (#91)
+* dfe5ee2 build(deps): bump github.com/onsi/ginkgo/v2 from 2.32.1 to 2.32.2 (#88)
+* 956100a fix(xoclient): list every volume ID tag of a VDI in ListVolumes
+* bb83b01 perf(xoclient): only fetch the plugged VBDs of the listed volumes
+* b3610c1 fix(xoclient): stop waiting for a VBD when the request is canceled
+* f4734d8 feat(controller): implement ListVolumes so the attacher re-plugs unplugged VBDs
+* 06168c8 test(node): add Linux-like fake mounter and node server unit tests
+* f51a7cf refactor(node): check device presence through Mounter.FindDevicePath
+* 5eb1695 fix(logging): strip secrets from CSI request logs
+* f06cab3 build(deps): bump dependencies
+* 1317815 build(deps): bump github.com/container-storage-interface/spec
+* dd2a5e1 fix: unplug the VBD before deleting it to avoid data corruption
+* ccb6e04 xix: unpublishing a volume now deletes the VBD that links the VM to the volume VDI to prevent the VM deletion from also deleting the VDI.
 <a name="v1.0.0-rc.1-2"></a>
 ## [v1.0.0-rc.1-2](https://github.com/vatesfr/xenorchestra-csi-driver/compare/v1.0.0-rc.1...v1.0.0-rc.1-2) (2026-09-10)
 
