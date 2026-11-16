@@ -6,12 +6,13 @@ metadata:
   name: xenorchestra-csi-driver-controller
   namespace: kube-system
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
+
 ---
 # Source: xenorchestra-csi-driver/templates/serviceaccounts.yaml
 apiVersion: v1
@@ -20,10 +21,10 @@ metadata:
   name: xenorchestra-csi-driver-node
   namespace: kube-system
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 
@@ -34,16 +35,17 @@ kind: ClusterRole
 metadata:
   name: xenorchestra-csi-driver-node
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -51,10 +53,10 @@ kind: ClusterRole
 metadata:
   name: xenorchestra-csi-driver-controller
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 rules:
@@ -88,6 +90,7 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -95,10 +98,10 @@ kind: ClusterRoleBinding
 metadata:
   name: xenorchestra-csi-driver-node
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 subjects:
@@ -109,6 +112,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: xenorchestra-csi-driver-node
+
 ---
 # Source: xenorchestra-csi-driver/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -116,10 +120,10 @@ kind: ClusterRoleBinding
 metadata:
   name: xenorchestra-csi-driver-controller
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 subjects:
@@ -139,10 +143,10 @@ metadata:
   name: xenorchestra-csi-driver-node
   namespace: kube-system
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
     app.kubernetes.io/component: node
@@ -212,7 +216,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: xenorchestra-csi-driver
-          image: "ghcr.io/vatesfr/xenorchestra-csi-driver:v1.0.0-rc.1"
+          image: "ghcr.io/vatesfr/xenorchestra-csi-driver:v1.0.0-rc.2"
           imagePullPolicy: IfNotPresent
           args:
             - --v=2
@@ -283,10 +287,10 @@ metadata:
   name: xenorchestra-csi-driver-controller
   namespace: kube-system
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
     app.kubernetes.io/component: controller
@@ -335,7 +339,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: xenorchestra-csi-driver
-          image: "ghcr.io/vatesfr/xenorchestra-csi-driver:v1.0.0-rc.1"
+          image: "ghcr.io/vatesfr/xenorchestra-csi-driver:v1.0.0-rc.2"
           imagePullPolicy: IfNotPresent
           args:
             - --v=2
@@ -474,10 +478,10 @@ kind: CSIDriver
 metadata:
   name: csi.xenorchestra.vates.tech
   labels:
-    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.2
+    helm.sh/chart: xenorchestra-csi-driver-1.0.0-rc.3
     app.kubernetes.io/name: xenorchestra-csi-driver
     app.kubernetes.io/instance: xenorchestra-csi-driver
-    app.kubernetes.io/version: "v1.0.0-rc.1"
+    app.kubernetes.io/version: "v1.0.0-rc.2"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: xenorchestra-csi-driver
 spec:
